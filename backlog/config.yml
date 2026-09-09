@@ -2,7 +2,7 @@ project_name: "neo-snake"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
 labels: []
-definition_of_done: []
+definition_of_done: ["task check is green", "Any deviation from reference/snake.html behavior is recorded in backlog/decisions/, not left implicit", "Docs touched by the change are updated in the same commit", "The task file's AC/notes/status are synced in the same commit as the code"]
 date_format: yyyy-mm-dd
 max_column_width: 20
 default_editor: "vim"
