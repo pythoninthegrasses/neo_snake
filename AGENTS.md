@@ -37,26 +37,44 @@ Full details are in `docs/architecture.md` — read it before making non-trivial
 - `docs/architecture.md` — the primary architecture reference; keep it in sync with any structural
   change to `snake.html`.
 
-<!-- BACKLOG.MD GUIDELINES START -->
-<!-- backlog.md-instructions-version: 1.48.0 -->
+## Context7
+
+Always use Context7 MCP for library/API documentation, code generation, and setup or configuration steps, without being explicitly asked.
+
+### Libraries
+
+- godotengine/godot-docs
+- j178/prek
+- mrlesk/backlog.md
+- websites/taskfile_dev
+
+<!-- BACKLOG.MD MCP GUIDELINES START -->
+
 <CRITICAL_INSTRUCTION>
 
-## Backlog.md Workflow
+## BACKLOG WORKFLOW INSTRUCTIONS
 
-This project uses Backlog.md for task and project management.
+This project uses Backlog.md MCP for all task and project management activities.
 
-**For every user request in this project, run `backlog instructions overview` before answering or taking action.**
+**CRITICAL GUIDANCE**
 
-Use the overview to decide whether to search, read, create, or update Backlog tasks.
+- If your client supports MCP resources, read `backlog://workflow/overview` to understand when and how to use Backlog for this project.
+- If your client only supports tools or the above request fails, call `backlog.get_backlog_instructions()` to load the tool-oriented overview. Use the `instruction` selector when you need `task-creation`, `task-execution`, or `task-finalization`.
 
-Before task lifecycle actions, read the matching detailed guide:
-- `backlog instructions task-creation` before creating or splitting tasks
-- `backlog instructions task-execution` before planning, changing status or assignee, adding a plan or implementation notes, or implementing task work
-- `backlog instructions task-finalization` before checking acceptance criteria, writing final summaries, or moving tasks to terminal statuses
+- **First time working here?** Read the overview resource IMMEDIATELY to learn the workflow
+- **Already familiar?** You should have the overview cached ("## Backlog.md Overview (MCP)")
+- **When to read it**: BEFORE creating tasks, or when you're unsure whether to track work
 
-Use `backlog <command> --help` before running unfamiliar commands. Help shows options, fields, and examples.
+These guides cover:
 
-Do not edit Backlog task, draft, document, decision, or milestone markdown files directly. Use the `backlog` CLI so metadata, relationships, and history stay consistent.
+- Decision framework for when to create tasks
+- Search-first workflow to avoid duplicates
+- Links to detailed guides for task creation, execution, and finalization
+- MCP tools reference
+
+You MUST read the overview resource to understand the complete workflow. The information is NOT summarized here.
 
 </CRITICAL_INSTRUCTION>
-<!-- BACKLOG.MD GUIDELINES END -->
+
+<!-- BACKLOG.MD MCP GUIDELINES END -->
+
