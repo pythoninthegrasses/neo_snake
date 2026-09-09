@@ -4,12 +4,14 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## What this is
 
-A single-file Snake game (`snake.html`) — no build step, no dependencies, no package manager, no
-modules. Open it directly in a browser to run it.
+This repo is migrating from a single-file Snake game to a Godot + Zig implementation (see
+`backlog/` for the phased plan). `reference/snake.html` is the frozen reference oracle — a
+single-file, no-build, no-dependency implementation — that later code is built and verified
+against. It must not be edited; open it directly in a browser to run it.
 
 ## Commands
 
-- Run: open `snake.html` in a browser (e.g. `xdg-open snake.html`).
+- Run: open `reference/snake.html` in a browser (e.g. `xdg-open reference/snake.html`).
 - Syntax-check the script: extract the contents of the `<script>` tag and run `node --check` on it
   (see `docs/architecture.md` for the exact technique used to unit-test mechanics without a browser
   — there is no test suite or test runner in this repo).
@@ -19,8 +21,8 @@ modules. Open it directly in a browser to run it.
 
 Full details are in `docs/architecture.md` — read it before making non-trivial changes. Key points:
 
-- Everything lives in one IIFE at the bottom of `snake.html`. CSS is in `<style>` in `<head>`; there
-  is no other file to keep in sync.
+- Everything lives in one IIFE at the bottom of `reference/snake.html`. CSS is in `<style>` in
+  `<head>`; there is no other file to keep in sync.
 - One mutable state object `S` holds all game state (`snake, dir, nextDir, food, score, best,
   status, wrap, acc, last, flash, particles`). `status` (`menu | playing | paused | dead`) is the
   only state machine — grep `S.status ===` when changing behavior.
@@ -35,7 +37,7 @@ Full details are in `docs/architecture.md` — read it before making non-trivial
 ## Docs
 
 - `docs/architecture.md` — the primary architecture reference; keep it in sync with any structural
-  change to `snake.html`.
+  change to `reference/snake.html`.
 
 ## Context7
 

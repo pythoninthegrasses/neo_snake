@@ -1,6 +1,9 @@
 # Architecture
 
-Single file: `snake.html`. No build step, no dependencies, no modules — open in a browser.
+`reference/snake.html` is the frozen reference oracle for this project: a single-file, no-build,
+no-dependency implementation of the game. It is marked `-diff linguist-vendored` in
+`.gitattributes` and must not be edited — later Zig/Godot code is built and verified against its
+behavior. Everything below describes that file.
 
 Everything lives in one IIFE (`(() => { ... })();`) at the bottom of the file. CSS is in `<style>`
 in `<head>`; there is no other file to keep in sync.
