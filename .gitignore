@@ -4,6 +4,14 @@ CLAUDE.md
 # Game toolchain (downloaded binaries, export templates, addons)
 /.tools/*
 
+# Godot game/ project: engine import cache, gdUnit4 (bootstrapped by
+# `./tools/bootstrap.py game gdunit4`, not vendored -- see
+# tools/game_toolchain.lock), gdUnit4 test-run reports, build artifacts.
+/game/.godot/
+/game/addons/gdUnit4/
+/game/reports/
+/game/build/
+
 # General
 .DS_Store
 .localized

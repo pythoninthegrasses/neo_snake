@@ -5,20 +5,22 @@
 # ///
 
 """
-Bootstrap pinned local game tooling: Godot export templates, and (only if
-mise's godot asset is not usable headless on this platform) a
-checksum-verified fallback Godot binary.
+Bootstrap pinned local game tooling: Godot export templates, (only if mise's
+godot asset is not usable headless on this platform) a checksum-verified
+fallback Godot binary, and the gdUnit4 test framework addon.
 
 Godot itself is installed via mise (this repo's .tool-versions pins
 godot@<GODOT_RELEASE>) -- not by this script -- unless bootstrap finds that
 asset unusable headless, in which case it downloads the pinned fallback
 binary under .tools/game/godot instead. Export templates are never
 distributed by mise, so they are always fetched here as a checksum-verified
-download. All pins live in tools/game_toolchain.lock, overridable per-entry
-via same-named environment variables.
+download. gdUnit4 is likewise a checksum-verified download, extracted to
+game/addons/gdUnit4 (not committed to git). All pins live in
+tools/game_toolchain.lock, overridable per-entry via same-named environment
+variables.
 
 Usage:
-    ./tools/bootstrap.py game godot
+    ./tools/bootstrap.py game [all|godot|gdunit4]
 """
 
 import hashlib
@@ -31,6 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from toolchain import (  # noqa: E402
     GAME_TOOLS,
+    REPO_ROOT,
     godot_fallback_binary_path,
     godot_is_headless_capable,
     godot_templates_dir,
@@ -111,6 +114,25 @@ def install_godot_templates(pins: dict[str, str]) -> None:
         die(f"Export templates report {version_marker}, expected {template_version}")
 
 
+def install_gdunit4(pins: dict[str, str]) -> None:
+    downloads = GAME_TOOLS / "downloads"
+    version = require_pin(pins, "GDUNIT4_VERSION")
+    archive = downloads / f"gdUnit4-{version}.zip"
+    download_verified(require_pin(pins, "GDUNIT4_URL"), require_pin(pins, "GDUNIT4_SHA256"), archive)
+
+    addon_dir = REPO_ROOT / "game" / "addons" / "gdUnit4"
+    staging = downloads / f".staging-gdUnit4-{version}"
+    shutil.rmtree(staging, ignore_errors=True)
+    with zipfile.ZipFile(archive) as bundle:
+        bundle.extractall(staging)
+    source_dir = next(staging.glob("gdUnit4-*/addons/gdUnit4"))
+    addon_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(addon_dir, ignore_errors=True)
+    shutil.move(str(source_dir), str(addon_dir))
+    shutil.rmtree(staging, ignore_errors=True)
+    print(f"gdUnit4 {version} is ready beneath {addon_dir}")
+
+
 def install_godot() -> None:
     pins = load_pins()
 
@@ -136,9 +158,12 @@ def install_godot() -> None:
 
 
 def bootstrap_game(component: str) -> None:
-    if component not in ("all", "godot"):
-        die("Usage: bootstrap.py game [all|godot]")
-    install_godot()
+    if component not in ("all", "godot", "gdunit4"):
+        die("Usage: bootstrap.py game [all|godot|gdunit4]")
+    if component in ("all", "godot"):
+        install_godot()
+    if component in ("all", "gdunit4"):
+        install_gdunit4(load_pins())
 
 
 COMMANDS = {
