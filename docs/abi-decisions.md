@@ -65,8 +65,34 @@ exactly why the layout was pinned before any producer or consumer existed.
 
 ## 5. The integer tick-period table
 
-The five-entry integer microsecond tick-period table (TASK-010 derives and commits the concrete
-values into this document, alongside literal copies in the oracle and `core/world.zig`).
+`reference/snake.html`'s tick-period formula is `max(55, 130 / (1 + min(score,40) * 0.035))`
+milliseconds — a float. The formula's shape is continuous, but `S.score` in `advance()` only ever
+increments by exactly `10` per food eaten (`S.score += 10`), so in actual gameplay `score` only
+ever takes the values `0, 10, 20, 30, 40, 50, ...`, and `min(score,40)` clamps everything from `40`
+upward to the same value. The formula therefore only ever produces **five distinct outputs** during
+real play, not a continuum — enumerating those five and precomputing them as integers is a lossless
+transcription of the original's actual behavior, not an approximation or a coarsening. Evaluating
+the formula once at each of the five distinct inputs and converting to whole microseconds
+(`round(ms * 1000)`) gives the frozen constant table:
+
+| `score` | `tick_ms` (float, for reference only) | `TICK_PERIOD_US[score]` (committed `u32`) |
+| --- | --- | --- |
+| 0 | 130 | 130000 |
+| 10 | 96.29629629629629 | 96296 |
+| 20 | 76.47058823529412 | 76471 |
+| 30 | 63.41463414634147 | 63415 |
+| 40 (and above — `min(score,40)` clamps) | 55 | 55000 |
+
+Index rule: `table[min(score / 10, 4)]` using integer division — since `score` is always a
+non-negative multiple of `10` in real play, this is an exact lookup, not an approximation for
+in-between values. `core/world.zig`'s accumulator and the oracle's tick loop must index this same
+five-entry table by that rule — not re-evaluate the float formula — so a tick period is always one
+of exactly these five committed integers in every implementation.
+
+Derivation verified by re-implementing the exact formula and asserting
+`round(max(55, 130/(1+min(s,40)*0.035)) * 1000)` equals each table entry for
+`s in {0,10,20,30,40}`, plus confirming `score >= 40` all clamp to the `40` entry (`min()`'s
+saturation point) — see the task's implementation notes for how to reproduce this check.
 
 **Why frozen now:** `reference/snake.html`'s original tick-period formula
 (`max(55, 130 / (1 + min(score,40) * 0.035))`) is a float computation. A float anywhere in the
