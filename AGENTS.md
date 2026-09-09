@@ -45,8 +45,11 @@ Always use Context7 MCP for library/API documentation, code generation, and setu
 
 ### Libraries
 
+- astral-sh/ruff
+- astral-sh/uv
 - godotengine/godot-docs
 - j178/prek
+- jdx/mise
 - mrlesk/backlog.md
 - websites/taskfile_dev
 
