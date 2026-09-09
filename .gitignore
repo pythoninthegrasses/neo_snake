@@ -1,6 +1,9 @@
 # ETC
 CLAUDE.md
 
+# Game toolchain (downloaded binaries, export templates, addons)
+/.tools/*
+
 # General
 .DS_Store
 .localized

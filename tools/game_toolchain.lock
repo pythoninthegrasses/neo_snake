@@ -1,0 +1,42 @@
+# Single source of truth for what mise cannot express in the game toolchain.
+# Parsed by tools/toolchain.py (used by tools/run.py and tools/bootstrap.py).
+# Environment variables of the same name override any entry. Update
+# versions, URLs, and checksums together, only after validating the new
+# release.
+
+# Godot itself is installed via mise (aqua backend; see .tool-versions).
+# GODOT_RELEASE/_LINUX_*/_MACOS_* below are only the fallback path used by
+# tools/bootstrap.py if mise's asset fails a --headless smoke test.
+GODOT_RELEASE="4.7.1-stable"
+GODOT_LINUX_URL="https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip"
+GODOT_LINUX_SHA256="c7ff14fd28472c8d4f193043de30278dcf7e5241a1dcf7566b02e27addaa33ba"
+GODOT_MACOS_URL="https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable/Godot_v4.7.1-stable_macos.universal.zip"
+GODOT_MACOS_SHA256="897cb7f9799796c717ae75f31446aed883dc92b1d6c3b33d893cc7843fff2fa9"
+
+# Export templates are never distributed by mise, on any platform.
+GODOT_TEMPLATE_VERSION="4.7.1.stable"
+GODOT_TEMPLATES_URL="https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable/Godot_v4.7.1-stable_export_templates.tpz"
+GODOT_TEMPLATES_SHA256="86409db6200b6f8fd3230989c2d2002851f3dd18acf11d7bdbafddf5a0dd0f72"
+
+# gdUnit4 (TASK-005): the GDScript test framework, vendored into
+# game/addons/gdUnit4 -- not committed to git, same as the Godot fallback
+# binary above.
+GDUNIT4_VERSION="6.2.1"
+GDUNIT4_URL="https://github.com/godot-gdunit-labs/gdUnit4/archive/refs/tags/v6.2.1.zip"
+GDUNIT4_SHA256="ffb48847c46f386bf0c7a716fd68c6dace7d67730775cf7f748adce8ef3ed794"
+
+# gdtoolkit (gdformat/gdlint): run via `uvx --from` at this pinned version
+# rather than vendored -- it is a plain PyPI CLI, not a Godot addon.
+GDTOOLKIT_VERSION="4.5.0"
+
+# Emscripten SDK (web build, later milestone): heavy and on-demand,
+# bootstrapped by a later task -- pinned here now so every consumer agrees
+# on the version.
+EMSDK_VERSION="4.0.11"
+
+# godot-cpp (TASK-004): vendored as a third_party/ git submodule, not a
+# checksum-verified download. Seeded here with upstream master's current
+# HEAD -- no godot-4.7-stable tag exists yet. TASK-004 re-verifies this pin
+# and records the tag-vs-SHA rationale in backlog/decisions/.
+GODOT_CPP_COMMIT="6cceaf6a5f8b0d78ac5d71c139fd7fabba43b918"
+GODOT_CPP_API_VERSION="4.7"
