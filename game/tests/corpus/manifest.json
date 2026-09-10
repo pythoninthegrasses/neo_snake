@@ -1,0 +1,29 @@
+{
+  "corpus_version": 1,
+  "files": [
+    {
+      "name": "wall-right-edge",
+      "file": "wall-right-edge.jsonl",
+      "ticks": 16,
+      "corpus_version": 1
+    },
+    {
+      "name": "wall-serpentine-death",
+      "file": "wall-serpentine-death.jsonl",
+      "ticks": 23,
+      "corpus_version": 1
+    },
+    {
+      "name": "win-full-board",
+      "file": "win-full-board.jsonl",
+      "ticks": 15,
+      "corpus_version": 1
+    },
+    {
+      "name": "wrap-serpentine",
+      "file": "wrap-serpentine.jsonl",
+      "ticks": 150,
+      "corpus_version": 1
+    }
+  ]
+}
