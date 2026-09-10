@@ -21,8 +21,8 @@ Implement regen_corpus.mjs, which drives sim.mjs through committed command logs 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Running task oracle:regen twice in a row produces byte-identical output (JSONL, manifest.json, core/corpus.zig)
-- [ ] #2 manifest.json lists every corpus file with its CORPUS_VERSION
+- [x] #1 Running task oracle:regen twice in a row produces byte-identical output (JSONL, manifest.json, core/corpus.zig)
+- [x] #2 manifest.json lists every corpus file with its CORPUS_VERSION
 <!-- AC:END -->
 
 ## Definition of Done
