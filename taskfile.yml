@@ -22,6 +22,8 @@ env:
 includes:
   game:
     taskfile: ./taskfiles/game.yml
+  oracle:
+    taskfile: ./taskfiles/oracle.yml
 
 tasks:
   default:

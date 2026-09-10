@@ -1,0 +1,34 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+tasks:
+  regen:
+    desc: "Regenerate the corpus traces, manifest.json and core/corpus.zig from the committed command logs"
+    summary: |
+      task oracle:regen
+
+      Reads every reference/oracle/corpus/commands/*.commands.jsonl and rewrites
+      game/tests/corpus/*.jsonl, game/tests/corpus/manifest.json and
+      core/corpus.zig from scratch (docs/corpus-format.md). Those outputs are
+      committed and never hand-edited. Two runs over the same command logs
+      produce byte-identical files.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - node reference/oracle/regen_corpus.mjs
+
+  check:
+    desc: "Verify the committed corpus matches a fresh regen (no writes) and check regen_corpus.mjs"
+    summary: |
+      task oracle:check
+
+      Two separate things, both read-only:
+        1. regen_corpus.mjs --check regenerates in memory and diffs against the
+           committed output, exiting non-zero on drift (including a trace file on
+           disk that no command log produces).
+        2. regen_corpus-check.mjs asserts the formats against docs/corpus-format.md
+           and re-derives every recorded checksum from sim.mjs + canon.mjs.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - node reference/oracle/regen_corpus.mjs --check
+      - node reference/oracle/regen_corpus-check.mjs
