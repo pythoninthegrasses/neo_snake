@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+shopt: ['globstar']
+
+dotenv: ['.env']
+
+vars:
+  MISE_SHIMS: "{{.HOME}}/.local/share/mise/shims"
+  BREW_PREFIX: '{{if eq ARCH "arm64"}}/opt/homebrew{{else}}/usr/local{{end}}'
+  ZIG_GLOBAL_CACHE_DIR: "{{.ROOT_DIR}}/.cache/zig"
+
+env:
+  # mise-shimmed binaries must win over a stale system PATH entry. Requires
+  # the env-precedence experiment (see .env.example) -- without it, Task's
+  # default OS-env-wins behavior makes this line a silent no-op.
+  PATH: "{{.MISE_SHIMS}}:{{.PATH}}"
+  ZIG_GLOBAL_CACHE_DIR: "{{.ZIG_GLOBAL_CACHE_DIR}}"
+
+includes:
+  game:
+    taskfile: ./taskfiles/game.yml
+
+tasks:
+  default:
+    desc: "Default task"
+    cmds:
+      - task --list
+
+  _guard-env-precedence:
+    internal: true
+    desc: "Fail loudly if TASK_X_ENV_PRECEDENCE is not actually in effect"
+    preconditions:
+      - sh: '[ "${TASK_X_ENV_PRECEDENCE:-}" = "1" ]'
+        msg: >-
+          TASK_X_ENV_PRECEDENCE is not set to 1. This taskfile's env: PATH
+          override (mise shims ahead of a stale system PATH) silently no-ops
+          without it. Set TASK_X_ENV_PRECEDENCE=1 in .env (see
+          .env.example) and retry.
+      - sh: 'case "$PATH" in {{.MISE_SHIMS}}:*) exit 0 ;; *) exit 1 ;; esac'
+        msg: >-
+          PATH is not prefixed with {{.MISE_SHIMS}} even though
+          TASK_X_ENV_PRECEDENCE=1 is set -- something downstream is
+          resetting PATH after this taskfile's env: block runs.
+
+  check:
+    desc: "The one documented build/test command (env-precedence guard, headless import, gdUnit4 tests)"
+    cmds:
+      - task: _guard-env-precedence
+      - task: game:import
+      - task: game:test

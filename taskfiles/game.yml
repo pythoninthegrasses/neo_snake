@@ -1,0 +1,35 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+tasks:
+  bootstrap:
+    desc: "Install the pinned Godot toolchain and gdUnit4 (checksum-verified downloads)"
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/bootstrap.py game all
+
+  godot:
+    desc: "Run the resolved Godot binary (mise, or the pinned fallback download)"
+    summary: |
+      task game:godot -- --headless --version
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/run.py godot {{.CLI_ARGS}}
+
+  import:
+    desc: "Headless Godot import of the game/ project"
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/run.py godot --headless --path game --import
+
+  test:
+    desc: "Run the game/tests/ suite headlessly through gdUnit4"
+    summary: |
+      task game:test
+
+      Non-zero exit on any failing test case (gdUnit4's own CI exit codes,
+      not a wrapper-imposed one).
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/run.py godot --headless --path game -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://tests --ignoreHeadlessMode
