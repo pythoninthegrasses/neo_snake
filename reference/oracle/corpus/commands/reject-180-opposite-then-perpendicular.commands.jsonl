@@ -1,0 +1,4 @@
+{"seed":[1,2,3,4],"cols":24,"rows":24,"wrap":true,"players":1,"ticks":9}
+{"t":1,"p":0,"in":"down"}
+{"t":2,"p":0,"in":"up"}
+{"t":3,"p":0,"in":"left"}

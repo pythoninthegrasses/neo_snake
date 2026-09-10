@@ -1,0 +1,13 @@
+{"seed":[61,62,63,64],"cols":16,"rows":24,"wrap":false,"players":1,"ticks":250}
+{"t":1,"p":0,"in":"up"}
+{"t":2,"p":0,"in":"down"}
+{"t":5,"p":0,"in":"right"}
+{"t":8,"p":0,"in":"down"}
+{"t":12,"p":0,"in":"down"}
+{"t":16,"p":0,"in":"left"}
+{"t":24,"p":0,"in":"down"}
+{"t":29,"p":0,"in":"up"}
+{"t":35,"p":0,"in":"right"}
+{"t":42,"p":0,"in":"down"}
+{"t":48,"p":0,"in":"left"}
+{"t":54,"p":0,"in":"up"}

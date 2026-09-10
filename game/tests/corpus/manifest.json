@@ -2,9 +2,195 @@
   "corpus_version": 1,
   "files": [
     {
+      "name": "negative-wrap-y10-col9a",
+      "file": "negative-wrap-y10-col9a.jsonl",
+      "ticks": 22,
+      "corpus_version": 1
+    },
+    {
+      "name": "negative-wrap-y12-col9",
+      "file": "negative-wrap-y12-col9.jsonl",
+      "ticks": 34,
+      "corpus_version": 1
+    },
+    {
+      "name": "negative-wrap-y16-col15",
+      "file": "negative-wrap-y16-col15.jsonl",
+      "ticks": 35,
+      "corpus_version": 1
+    },
+    {
+      "name": "one-turn-per-tick",
+      "file": "one-turn-per-tick.jsonl",
+      "ticks": 9,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-01",
+      "file": "random-01.jsonl",
+      "ticks": 19,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-02",
+      "file": "random-02.jsonl",
+      "ticks": 2000,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-03",
+      "file": "random-03.jsonl",
+      "ticks": 13,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-04",
+      "file": "random-04.jsonl",
+      "ticks": 1200,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-05",
+      "file": "random-05.jsonl",
+      "ticks": 19,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-06",
+      "file": "random-06.jsonl",
+      "ticks": 1500,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-07",
+      "file": "random-07.jsonl",
+      "ticks": 20,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-08",
+      "file": "random-08.jsonl",
+      "ticks": 1000,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-09",
+      "file": "random-09.jsonl",
+      "ticks": 16,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-10",
+      "file": "random-10.jsonl",
+      "ticks": 800,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-11",
+      "file": "random-11.jsonl",
+      "ticks": 23,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-12",
+      "file": "random-12.jsonl",
+      "ticks": 1200,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-13",
+      "file": "random-13.jsonl",
+      "ticks": 4,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-14",
+      "file": "random-14.jsonl",
+      "ticks": 1000,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-15",
+      "file": "random-15.jsonl",
+      "ticks": 21,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-16",
+      "file": "random-16.jsonl",
+      "ticks": 300,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-17",
+      "file": "random-17.jsonl",
+      "ticks": 32,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-18",
+      "file": "random-18.jsonl",
+      "ticks": 250,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-19",
+      "file": "random-19.jsonl",
+      "ticks": 68,
+      "corpus_version": 1
+    },
+    {
+      "name": "random-20",
+      "file": "random-20.jsonl",
+      "ticks": 300,
+      "corpus_version": 1
+    },
+    {
+      "name": "reject-180-down-then-up",
+      "file": "reject-180-down-then-up.jsonl",
+      "ticks": 6,
+      "corpus_version": 1
+    },
+    {
+      "name": "reject-180-opposite-then-perpendicular",
+      "file": "reject-180-opposite-then-perpendicular.jsonl",
+      "ticks": 9,
+      "corpus_version": 1
+    },
+    {
+      "name": "reject-180-right-then-left",
+      "file": "reject-180-right-then-left.jsonl",
+      "ticks": 7,
+      "corpus_version": 1
+    },
+    {
+      "name": "tail-blocked-by-middle-segment",
+      "file": "tail-blocked-by-middle-segment.jsonl",
+      "ticks": 60,
+      "corpus_version": 1
+    },
+    {
+      "name": "tail-chase-vacating-tail",
+      "file": "tail-chase-vacating-tail.jsonl",
+      "ticks": 199,
+      "corpus_version": 1
+    },
+    {
+      "name": "wall-corner-death",
+      "file": "wall-corner-death.jsonl",
+      "ticks": 9,
+      "corpus_version": 1
+    },
+    {
       "name": "wall-right-edge",
       "file": "wall-right-edge.jsonl",
       "ticks": 16,
+      "corpus_version": 1
+    },
+    {
+      "name": "wall-right-edge16x16",
+      "file": "wall-right-edge16x16.jsonl",
+      "ticks": 8,
       "corpus_version": 1
     },
     {
@@ -14,15 +200,21 @@
       "corpus_version": 1
     },
     {
-      "name": "win-full-board",
-      "file": "win-full-board.jsonl",
-      "ticks": 15,
+      "name": "wall-top-edge-death10",
+      "file": "wall-top-edge-death10.jsonl",
+      "ticks": 3,
       "corpus_version": 1
     },
     {
-      "name": "wrap-serpentine",
-      "file": "wrap-serpentine.jsonl",
-      "ticks": 150,
+      "name": "wall-turn-bottom-edge-death",
+      "file": "wall-turn-bottom-edge-death.jsonl",
+      "ticks": 13,
+      "corpus_version": 1
+    },
+    {
+      "name": "win-full-board",
+      "file": "win-full-board.jsonl",
+      "ticks": 15,
       "corpus_version": 1
     }
   ]
