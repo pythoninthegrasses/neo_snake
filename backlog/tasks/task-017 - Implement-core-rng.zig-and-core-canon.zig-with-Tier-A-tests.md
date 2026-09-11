@@ -43,6 +43,7 @@ Implement the Zig xoshiro128** RNG and canonical-state serialization per docs/rn
 
 <!-- SECTION:NOTES:BEGIN -->
 Build-layout decision (resolved, sign-off given — safe to implement): this is the first Zig code/build scaffolding in the repo, with no in-repo prior art (core/ has only corpus.zig, generated data, and no build.zig anywhere yet) and ~/git/zelda3/build.zig is not directly reusable (full native-target build, links libc). Resolved and written into docs/build-layout.md — implement exactly that spec, restated here so it doesn't need re-deriving:
+
 - Location: core/build.zig (plus core/build.zig.zon if Zig 0.16.0's package format requires a manifest), scoped to core/, not the repo root.
 - Module layout: one file per doc — core/rng.zig (docs/rng.md), core/canon.zig (docs/canonical-state.md). core/corpus.zig (TASK-014, generated data) is not part of the build graph. No lib.zig aggregator yet.
 - zig build test: one b.addTest per module, both registered under the same `test` step, so `zig build test` runs both. ZIG_GLOBAL_CACHE_DIR is already set repo-wide in the root taskfile.yml; core/build.zig needs no cache-dir handling of its own.
@@ -57,6 +58,7 @@ Status remains In Progress. AC/DoD checkboxes are deliberately left UNCHECKED �
 full `task check` has not been re-run since the wiring changes landed. Resume from here.
 
 DONE (compiles clean; `zig build test` green in core/):
+
 - core/rng.zig — fixed a pre-existing 0.16.0 compile bug: hand-rolled `rotl` used
   `x >> (32 - k)` with `k: u5` (32 overflows u5). Now delegates to `std.math.rotl`
   (wraps the shift count). 2 tests pass (docs/rng.md's 8-output vector + state-after-8,
@@ -71,6 +73,7 @@ DONE (compiles clean; `zig build test` green in core/):
   the single `test` step. No build.zig.zon required (0.16.0 builds fine without deps/manifest).
 
 TODO to finish the task:
+
 1. Create taskfiles/core.yml (dir: core, cmds: [zig build test]) — mirror taskfiles/oracle.yml style.
 2. Wire into root taskfile.yml: add `core: { taskfile: ./taskfiles/core.yml }` to includes:, and
    insert `- task: core:test` into `check` after `oracle:verify`, before `game:import`.

@@ -235,12 +235,12 @@ fn writeBytes(buf: []u8, o: *usize, v: []const u8) void {
 }
 
 fn readU16(buf: []const u8, off: usize) u16 {
-    const r: *const align(1) [2]u8 = @ptrCast(buf[off .. off + 2]);
+    const r: *align(1) const [2]u8 = @ptrCast(buf[off .. off + 2]);
     return std.mem.readInt(u16, r, .little);
 }
 
 fn readU32(buf: []const u8, off: usize) u32 {
-    const r: *const align(1) [4]u8 = @ptrCast(buf[off .. off + 4]);
+    const r: *align(1) const [4]u8 = @ptrCast(buf[off .. off + 4]);
     return std.mem.readInt(u32, r, .little);
 }
 
