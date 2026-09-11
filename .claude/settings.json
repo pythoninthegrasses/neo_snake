@@ -1,0 +1,72 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(backlog:*)",
+      "Bash(cat:*)",
+      "Bash(fd:*)",
+      "Bash(gh pr:*)",
+      "Bash(git add:*)",
+      "Bash(git bisect:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git commit:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git push:*)",
+      "Bash(git show:*)",
+      "Bash(git status:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git revert:*)",
+      "Bash(head:*)",
+      "Bash(ln:*)",
+      "Bash(ls:*)",
+      "Bash(lsof:*)",
+      "Bash(prek:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(rg:*)",
+      "Bash(ruff:*)",
+      "Bash(task:*)",
+      "Bash(tee:*)",
+      "Bash(timeout:*)",
+      "Bash(tree:*)",
+      "Bash(uv:*)",
+      "Bash(zig:*)",
+      "mcp__backlog__get_task_creation_guide",
+      "mcp__backlog__get_workflow_overview",
+      "mcp__backlog__task_create",
+      "mcp__backlog__task_edit",
+      "mcp__backlog__task_list",
+      "mcp__backlog__task_search",
+      "mcp__backlog__task_view",
+      "mcp__context7__query-docs",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__serena__activate_project",
+      "mcp__serena__find_file",
+      "mcp__serena__find_referencing_symbols",
+      "mcp__serena__find_symbol",
+      "mcp__serena__get_current_config",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__initial_instructions",
+      "mcp__serena__list_dir",
+      "mcp__serena__read_memory",
+      "mcp__serena__think_about_task_adherence",
+      "Read(//tmp/**)",
+      "Read(//Users/**)",
+      "WebSearch"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git diff --name-only HEAD | xargs -r prek run --files"
+          }
+        ]
+      }
+    ]
+  }
+}
