@@ -1,6 +1,6 @@
 version: "3.0"
 
-set: ['e', 'u', 'pipefail']
+set: ["e", "u", "pipefail"]
 
 tasks:
   test:
