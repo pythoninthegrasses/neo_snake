@@ -4,13 +4,13 @@ set: ['e', 'u', 'pipefail']
 
 tasks:
   test:
-    desc: "Run the Tier-A unit tests for the pure-Zig core (core/rng.zig, core/canon.zig)"
+    desc: "Run the Tier-A unit tests for the pure-Zig core (core/rng.zig, core/canon.zig, core/world.zig)"
     summary: |
       task core:test
 
-      Runs `zig build test` inside core/, which builds core/rng.zig and
-      core/canon.zig as separate test modules under a single `test` step
-      (docs/build-layout.md). No libc is linked and no allocator is used, so
+      Runs `zig build test` inside core/, which builds core/rng.zig,
+      core/canon.zig, and core/world.zig as separate test modules under a
+      single `test` step (docs/build-layout.md). No libc is linked and no allocator is used, so
       this is the fast pure-Zig gate that runs before the slower Godot steps.
     dir: core
     cmds:
