@@ -91,6 +91,7 @@ plus `corpus_version` (the `CORPUS_VERSION` this trace was generated under, `doc
 ```json
 {
   "corpus_version": 1,
+  "oracle_sha256": "3f9c1a...ab12",
   "files": [
     {"name": "tail-chase", "file": "tail-chase.jsonl", "ticks": 143, "corpus_version": 1}
   ]
@@ -103,6 +104,23 @@ deterministic, so the only remaining nondeterminism to rule out is iteration ord
 repeats `corpus_version` per TASK-014 AC#2's literal wording ("lists every corpus file with its
 `CORPUS_VERSION`") even though a full regen always writes every file at the same version — this
 guards against a future partial-regen leaving mixed versions undetected.
+
+`oracle_sha256` (TASK-016) is a lowercase hex SHA-256 digest over the concatenated raw bytes of
+every `reference/oracle/*.mjs` file — a non-recursive glob of the `oracle/` directory itself,
+excluding `corpus/` (data, not source) — sorted ascending by filename, concatenated with no
+delimiter between files. `task oracle:regen` computes and writes this field on every run, so it
+always reflects whichever oracle source actually produced the committed corpus.
+
+`task oracle:verify` (TASK-016) recomputes the same hash from the current working tree's
+`reference/oracle/*.mjs` files and compares it against the committed `manifest.json`'s value. A
+mismatch means the oracle source changed since the last `oracle:regen` and fails loudly rather than
+trusting a corpus that may now silently disagree with its own generator. This closes a gap
+byte-identity alone can't: an oracle edit that happens to be behaviorally inert (a comment, a
+variable rename) leaves every regenerated trace byte-identical to what's committed, so a
+byte-identity-only check would pass even though the source no longer matches what's recorded.
+`oracle_sha256` still goes stale in that case, so `oracle:verify` still fails until `oracle:regen`
+is re-run. Scoped to `manifest.json` only — `core/corpus.zig` is an unrelated comptime file listing
+and doesn't need this field.
 
 ## `core/corpus.zig`
 
