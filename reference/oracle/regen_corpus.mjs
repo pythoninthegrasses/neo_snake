@@ -18,10 +18,15 @@
 // core/corpus.zig entries are sorted lexicographically by trace name. Running
 // this script twice over the same command logs produces byte-identical files.
 //
-// Run: node reference/oracle/regen_corpus.mjs [--check]
+// Run: node reference/oracle/regen_corpus.mjs [--check|--verify]
 //   --check compares the three artifacts a regen would produce against what is
 //   on disk and writes nothing, so a verify task can report drift.
+//   --verify additionally recomputes oracle_sha256 from the working tree's
+//   reference/oracle/*.mjs files and compares it against the committed
+//   manifest.json's value, so a behaviorally-inert oracle edit (a comment, a
+//   rename) that leaves every trace byte-identical still fails (TASK-016).
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -40,6 +45,7 @@ export const CORPUS_VERSION = 1;
 
 // Where the three artifacts live, relative to the repo root (docs/corpus-format.md).
 const COMMAND_DIR = 'reference/oracle/corpus/commands';
+const ORACLE_DIR = 'reference/oracle';
 const TRACE_DIR = 'game/tests/corpus';
 const MANIFEST_PATH = join(TRACE_DIR, 'manifest.json');
 const ZIG_PATH = join('core', 'corpus.zig');
@@ -206,14 +212,34 @@ const canonical = (S) => ({
 });
 
 /**
- * manifest.json: every corpus file with the CORPUS_VERSION it was generated
+ * oracle_sha256 (docs/corpus-format.md, TASK-016): lowercase hex SHA-256 over
+ * the concatenated raw bytes of every `reference/oracle/*.mjs` file — a
+ * non-recursive scan of the oracle directory itself, so `corpus/` (data, not
+ * source) is excluded — sorted ascending by filename and joined with no
+ * delimiter. Whichever oracle source is on disk when a regen runs is the
+ * source recorded in the manifest, check scripts included.
+ */
+export function oracleSha256(root) {
+  const names = readdirSync(join(root, ORACLE_DIR), { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.mjs'))
+    .map((e) => e.name)
+    .sort();
+  const hash = createHash('sha256');
+  for (const name of names) hash.update(readFileSync(join(root, ORACLE_DIR, name)));
+  return hash.digest('hex');
+}
+
+/**
+ * manifest.json: the CORPUS_VERSION, the oracle_sha256 of the sources that
+ * produced it, and every corpus file with the CORPUS_VERSION it was generated
  * under (TASK-014 AC#2), sorted lexicographically by `name`. Each entry
  * repeats the version even though a full regen always writes one version, so a
  * future partial regen cannot leave mixed versions undetected.
  */
-export function renderManifest(traces) {
+export function renderManifest(traces, oracleSha256Hex) {
   return `${JSON.stringify({
     corpus_version: CORPUS_VERSION,
+    oracle_sha256: oracleSha256Hex,
     files: traces.map((t) => ({
       name: t.name,
       file: `${t.name}.jsonl`,
@@ -265,7 +291,7 @@ export function generate(root) {
   }
   traces.sort(byName);
 
-  files.set(MANIFEST_PATH, renderManifest(traces));
+  files.set(MANIFEST_PATH, renderManifest(traces, oracleSha256(root)));
   files.set(ZIG_PATH, renderCorpusZig(traces));
   return { files, traces };
 }
@@ -376,11 +402,38 @@ function checkAgainst(root, files) {
   process.exitCode = 1;
 }
 
+/**
+ * Exit 1 unless the committed manifest's oracle_sha256 equals the hash of the
+ * oracle sources currently on disk. A mismatch means the oracle changed since
+ * the last `task oracle:regen` — even if every trace still regenerates
+ * byte-identically (docs/corpus-format.md: why two checks, not one), the
+ * corpus on record no longer names its own generator.
+ */
+function verifyOracleHash(root, files) {
+  const actual = JSON.parse(files.get(MANIFEST_PATH)).oracle_sha256;
+  let recorded = null;
+  try {
+    recorded = JSON.parse(readFileSync(join(root, MANIFEST_PATH), 'utf8')).oracle_sha256;
+  } catch {
+    /* missing or unreadable manifest counts as a mismatch below */
+  }
+  if (recorded === actual) {
+    console.log(`oracle_sha256 matches the committed manifest (${actual})`);
+    return;
+  }
+  console.error('oracle_sha256 mismatch: the oracle sources in reference/oracle/ '
+    + 'have changed since the committed corpus was regenerated. Run task oracle:regen.');
+  console.error(`  committed manifest: ${recorded ?? '(missing)'}`);
+  console.error(`  current sources:    ${actual}`);
+  process.exitCode = 1;
+}
+
 function main(argv) {
   const check = argv.includes('--check');
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const { files, traces } = generate(root);
-  if (check) {
+  if (check || argv.includes('--verify')) {
+    if (argv.includes('--verify')) verifyOracleHash(root, files);
     checkAgainst(root, files);
     return;
   }

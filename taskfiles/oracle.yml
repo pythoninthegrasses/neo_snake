@@ -32,3 +32,21 @@ tasks:
     cmds:
       - node reference/oracle/regen_corpus.mjs --check
       - node reference/oracle/regen_corpus-check.mjs
+
+  verify:
+    desc: "Verify oracle_sha256 and that the committed corpus matches a fresh regen (no writes)"
+    summary: |
+      task oracle:verify
+
+      Two checks, both read-only, run by regen_corpus.mjs --verify:
+        1. Recompute oracle_sha256 over reference/oracle/*.mjs (non-recursive)
+           and compare it against the committed manifest.json's value, so a
+           behaviorally-inert oracle edit still fails (docs/corpus-format.md).
+        2. Regenerate the corpus in memory and diff it byte-for-byte against
+           the committed game/tests/corpus/ and core/corpus.zig.
+
+      Part of task check. Either check failing is a failure; re-run
+      task oracle:regen to reconcile.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - node reference/oracle/regen_corpus.mjs --verify

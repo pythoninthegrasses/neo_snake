@@ -48,8 +48,9 @@ tasks:
           resetting PATH after this taskfile's env: block runs.
 
   check:
-    desc: "The one documented build/test command (env-precedence guard, headless import, gdUnit4 tests)"
+    desc: "The one documented build/test command (env-precedence guard, oracle verify, headless import, gdUnit4 tests)"
     cmds:
       - task: _guard-env-precedence
+      - task: oracle:verify
       - task: game:import
       - task: game:test

@@ -1,7 +1,7 @@
 ---
 id: TASK-016
 title: 'Wire task oracle:verify into task check'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 22:09'
 labels: []
@@ -21,17 +21,17 @@ Implement task oracle:verify: regenerate the corpus into a scratch directory, as
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 task oracle:verify is part of task check
-- [ ] #2 Deliberately editing any oracle/*.mjs file without regenerating the corpus makes task oracle:verify fail
-- [ ] #3 The scratch-regenerated corpus is byte-identical to the committed one on a clean run
+- [x] #1 task oracle:verify is part of task check
+- [x] #2 Deliberately editing any oracle/*.mjs file without regenerating the corpus makes task oracle:verify fail
+- [x] #3 The scratch-regenerated corpus is byte-identical to the committed one on a clean run
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task check is green
-- [ ] #2 Any deviation from reference/snake.html behavior is recorded in backlog/decisions/, not left implicit
-- [ ] #3 Docs touched by the change are updated in the same commit
-- [ ] #4 The task file's AC/notes/status are synced in the same commit as the code
+- [x] #1 task check is green
+- [x] #2 Any deviation from reference/snake.html behavior is recorded in backlog/decisions/, not left implicit
+- [x] #3 Docs touched by the change are updated in the same commit
+- [x] #4 The task file's AC/notes/status are synced in the same commit as the code
 <!-- DOD:END -->
 
 ## Format decision (resolved, sign-off given — safe to implement)
@@ -61,3 +61,30 @@ commit — implement exactly that spec, restated here so it doesn't need re-deri
   no longer matches what's on record — `oracle_sha256` catches that case.
 
 `docs/corpus-format.md` already reflects this — no further design work needed there.
+
+## Implementation Notes
+
+- `regen_corpus.mjs` grew an exported `oracleSha256(root)` (non-recursive scan of
+  `reference/oracle/`, `*.mjs` only, filenames sorted ascending, raw bytes concatenated
+  with no delimiter, SHA-256 lowercase hex) and an `oracle_sha256` field in
+  `renderManifest` right after `corpus_version`, so `task oracle:regen` records the hash
+  of whichever oracle source produced the corpus.
+- Chose to grow `regen_corpus.mjs` with a `--verify` mode rather than a new script: it
+  runs `verifyOracleHash` (recompute from the working tree vs the committed
+  `manifest.json`, loud mismatch message naming both hashes) plus the existing
+  `checkAgainst` regen-and-diff. "Regenerate in a scratch area and diff" is done
+  in-memory exactly as `--check` already does it — the bytes a regen would write,
+  compared against the committed files, no writes.
+- `task oracle:verify` added to `taskfiles/oracle.yml` running `--verify`, wired into
+  the top-level `check` in `taskfile.yml` after the env guard (fast, pure-node, fails
+  before the Godot steps). `oracle:check` is untouched and remains a distinct target.
+- Committed corpus re-regenerated once after all oracle edits (the hash covers
+  `regen_corpus.mjs` itself): only `manifest.json` changed; all 36 traces and
+  `core/corpus.zig` are byte-identical. Verified: clean `oracle:verify` passes;
+  appending an inert comment to `sim.mjs` without regenerating makes it exit non-zero
+  on the hash mismatch (and the manifest byte-diff); reverting restores green.
+- Docs: `docs/corpus-format.md`'s manifest/verify sections (commit 3f789ff) already
+  specify this exactly; no doc edit was needed or made.
+- DoD#2: tooling-only change — no `reference/snake.html` behavior is touched, deviated
+  from, or reinterpreted, so no `backlog/decisions/` entry is required (same reading as
+  TASK-014/015, which added none).
