@@ -20,6 +20,8 @@ env:
   ZIG_GLOBAL_CACHE_DIR: "{{.ZIG_GLOBAL_CACHE_DIR}}"
 
 includes:
+  core:
+    taskfile: ./taskfiles/core.yml
   game:
     taskfile: ./taskfiles/game.yml
   oracle:
@@ -52,5 +54,6 @@ tasks:
     cmds:
       - task: _guard-env-precedence
       - task: oracle:verify
+      - task: core:test
       - task: game:import
       - task: game:test

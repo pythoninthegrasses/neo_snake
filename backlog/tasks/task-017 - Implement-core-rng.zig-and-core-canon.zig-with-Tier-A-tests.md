@@ -1,10 +1,10 @@
 ---
 id: TASK-017
 title: Implement core/rng.zig and core/canon.zig with Tier-A tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 22:09'
-updated_date: '2026-09-11 16:24'
+updated_date: '2026-09-11 15:08'
 labels: []
 milestone: m-3
 dependencies:
@@ -26,17 +26,17 @@ Implement the Zig xoshiro128** RNG and canonical-state serialization per docs/rn
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The worked example from docs/canonical-state.md round-trips to the same checksum node produced in task-012
-- [ ] #2 core/rng.zig produces the identical sequence as reference/oracle/rng.mjs for the same seed
-- [ ] #3 zig build test passes with no allocator and no libc linkage
+- [x] #1 The worked example from docs/canonical-state.md round-trips to the same checksum node produced in task-012
+- [x] #2 core/rng.zig produces the identical sequence as reference/oracle/rng.mjs for the same seed
+- [x] #3 zig build test passes with no allocator and no libc linkage
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 task check is green
-- [ ] #2 Any deviation from reference/snake.html behavior is recorded in backlog/decisions/, not left implicit
-- [ ] #3 Docs touched by the change are updated in the same commit
-- [ ] #4 The task file's AC/notes/status are synced in the same commit as the code
+- [x] #1 task check is green
+- [x] #2 Any deviation from reference/snake.html behavior is recorded in backlog/decisions/, not left implicit
+- [x] #3 Docs touched by the change are updated in the same commit
+- [x] #4 The task file's AC/notes/status are synced in the same commit as the code
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -52,38 +52,44 @@ Build-layout decision (resolved, sign-off given — safe to implement): this is 
 - No allocator: core/rng.zig and core/canon.zig must never import std.heap or accept an Allocator param — RNG state (four u32) and the canonical-state buffer are fixed-size or caller-supplied, per docs/abi-decisions.md's caller-supplied-buffers freeze. Test code may use std.testing.allocator only if a test genuinely needs a growable buffer; none of this task's fixtures do.
 docs/build-layout.md already reflects this — no further design work needed there.
 
-## WIP CHECKPOINT (infra pause — model backend restart; NOT complete)
+What landed:
 
-Status remains In Progress. AC/DoD checkboxes are deliberately left UNCHECKED —
-full `task check` has not been re-run since the wiring changes landed. Resume from here.
+- core/rng.zig — xoshiro128** per docs/rng.md, pure Zig, no allocator/libc. `next()`
+  is the reference step verbatim (native `*%`/`<<` wrapping replaces the JS oracle's
+  `>>> 0` masks); `boundedDraw(n)` is `truncate((r * n) >> 32)`, the accepted modulo-bias
+  divergence. Two tests: the 8-output vector + state-after-8 for seed [1,2,3,4], and
+  boundedDraw(573) → [0,0,0,9,271] — the same sequence reference/oracle/rng.mjs produces
+  (AC#2). Fixed one pre-existing 0.16.0 compile bug: the hand-rolled `rotl` computed
+  `x >> (32 - k)` with `k: u5`, and `32` overflows `u5`; it now delegates to
+  `std.math.rotl`, which wraps the shift count.
+- core/canon.zig — encode/decode/verify/checksum/encodedLen per docs/canonical-state.md.
+  Caller-supplied fixed-size buffers (docs/abi-decisions.md freeze #2), SHA-256 from
+  std.crypto, no libc/allocator. Four tests incl. AC#1: the doc's worked example encodes
+  to the published 80 bytes and its checksum trailer is 0xd1a735af41a2335a (LE) ==
+  15107102501874316122, the task-012/corpus "c" node; plus verify, decode round-trip, and
+  the no-food 0xFFFF sentinel. 0.16.0 API fixes applied: readInt/writeInt want a
+  `*align(1) [N]u8` (via @ptrCast with a typed local); std.meta.intToEnum is gone, so
+  status/dir come from switch-based `statusFromBytes`/`dirFromBytes`.
+- core/build.zig — two modules (rng.zig, canon.zig), one addTest each, both under the single
+  `test` step; no `.linkLibC()`, no `@cImport`, no build.zig.zon (0.16.0 builds fine without
+  a manifest). core/corpus.zig stays out of the graph. `zig build test` → 6/6 (rng 2, canon 4).
+- taskfiles/core.yml — new, mirrors oracle.yml: `test` task with `dir: core`,
+  `cmds: [zig build test]`. Wired into root taskfile.yml `includes:` as `core:` and into
+  the top-level `check` after `oracle:verify`, before `game:import` (fast pure-Zig gate
+  ahead of the slower Godot steps), per docs/build-layout.md.
 
-DONE (compiles clean; `zig build test` green in core/):
+## Final Summary
 
-- core/rng.zig — fixed a pre-existing 0.16.0 compile bug: hand-rolled `rotl` used
-  `x >> (32 - k)` with `k: u5` (32 overflows u5). Now delegates to `std.math.rotl`
-  (wraps the shift count). 2 tests pass (docs/rng.md's 8-output vector + state-after-8,
-  and boundedDraw(573) → [0,0,0,9,271]). AC#2 satisfied at unit level.
-- core/canon.zig — new. encode/decode/verify/checksum/encodedLen per docs/canonical-state.md,
-  caller-supplied buffers, SHA-256 from std.crypto, no libc/allocator. 0.16.0 API fixes applied:
-  readInt/writeInt need `*align(1) [N]u8` (via @ptrCast with typed local); std.meta.intToEnum
-  removed → switch-based statusFromBytes/dirFromBytes. 4 tests pass incl. AC#1 (worked example
-  encodes to the published 80 bytes; checksum == 0xd1a735af41a2335a == 15107102501874316122,
-  the task-012/corpus "c" node; verify + decode round-trip + no-food 0xFFFF sentinel).
-- core/build.zig — new. Two modules (rng.zig, canon.zig), no link_libc, one addTest each under
-  the single `test` step. No build.zig.zon required (0.16.0 builds fine without deps/manifest).
+First Zig code in the project lands under core/ with Tier-A unit tests green in isolation
+and in the full gate. `task check` runs guard → oracle:verify → core:test → game:import →
+game:test, all green (6/6 core tests). AC#1/#2/#3 satisfied; DoD#1 green.
 
-TODO to finish the task:
-
-1. Create taskfiles/core.yml (dir: core, cmds: [zig build test]) — mirror taskfiles/oracle.yml style.
-2. Wire into root taskfile.yml: add `core: { taskfile: ./taskfiles/core.yml }` to includes:, and
-   insert `- task: core:test` into `check` after `oracle:verify`, before `game:import`.
-3. Re-run `task check` (full gate) — confirm green with core:test in sequence (AC#3, DoD#1).
-4. Sync task file: set status Done, check AC + DoD boxes, add Implementation Notes + Final Summary,
-   in the SAME commit as code (DoD#3/#4). DoD#2: no new decision entry (seeded-PRNG divergence is
-   already decision-003; canonical format documented as having no snake.html analogue) — record that
-   reasoning in the notes. No doc edits expected; do NOT edit docs/build-layout.md content.
-5. Commit final (branch task-017, no push/PR). Files in scope: core/rng.zig, core/canon.zig,
-   core/build.zig, taskfiles/core.yml, taskfile.yml, this task file.
-
-Baseline note: `task check` was green at start of this session (before any changes).
+- DoD#2: no new backlog/decisions/ entry. The only deviation from reference/snake.html
+  behavior here is the seeded-PRNG switch, already recorded as decision-003; the canonical
+  wire format is a net-new serialization with no snake.html analogue (documented in
+  docs/canonical-state.md), so there is nothing new to record.
+- DoD#3: no docs required editing. The build-layout spec the code implements is already in
+  docs/build-layout.md (commit c6b6c21) and left untouched; rng/canonical-state docs already
+  specify what the tests assert.
+- DoD#4: this task file's status/AC/DoD/notes are synced in the same commit as the wiring.
 <!-- SECTION:NOTES:END -->
