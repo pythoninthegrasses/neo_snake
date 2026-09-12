@@ -33,7 +33,8 @@
   "render": {
     "checkerboard_alpha": 0.019,
     "grid_line_alpha": 0.055,
-    "device_pixel_ratio_cap": 2
+    "device_pixel_ratio_cap": 2,
+    "pause_vignette_alpha": 0.55
   },
   "input": {
     "swipe_threshold_cell_fraction": 0.5

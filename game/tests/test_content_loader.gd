@@ -89,7 +89,7 @@ func test_best_score_defaults_mismatched_with_modes_reports_a_clear_error() -> v
 		"flash": {"decay_per_ms": 0.004, "dead_alpha_factor": 0.28, "eat_alpha_factor": 0.12},
 		"food": {"pulse_period_ms": 260, "pulse_pad_base_fraction": 0.2, "pulse_pad_amplitude_fraction": 0.04, "shadow_blur_base_fraction": 0.7, "shadow_blur_amplitude_fraction": 0.6, "corner_radius_fraction": 0.28},
 		"snake": {"head_shadow_blur_fraction": 0.75, "body_pad_base_fraction": 0.12, "body_pad_amplitude_fraction": 0.16, "corner_radius_fraction": 0.3, "eye_side_offset_fraction": 0.19, "eye_forward_offset_fraction": 0.16, "eye_radius_fraction": 0.072, "eye_radius_min_px": 1.4},
-		"render": {"checkerboard_alpha": 0.019, "grid_line_alpha": 0.055, "device_pixel_ratio_cap": 2},
+		"render": {"checkerboard_alpha": 0.019, "grid_line_alpha": 0.055, "device_pixel_ratio_cap": 2, "pause_vignette_alpha": 0.55},
 		"input": {"swipe_threshold_cell_fraction": 0.5},
 		"scoring": {"best_score_defaults": {"wall": 0, "extra_mode": 0}},
 	}))
