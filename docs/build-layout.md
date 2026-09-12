@@ -550,3 +550,25 @@ directly-testable function with no `JavaScriptBridge` dependency. The actual web
 `JavaScriptBridge.eval` and folds the result through the same v1→v2 migration — untestable in headless
 native Godot, so it carries a doc comment describing the manual web-export verification procedure
 instead, per AC#4's "or documented manual check" allowance.
+
+## `game/platform/app_lifecycle.gd` (TASK-035)
+
+`AppLifecycle` ports the oracle's window-`blur` auto-pause (`snake.html:620`) onto Godot's
+`_notification()` MainLoop callback. Which of `NOTIFICATION_APPLICATION_FOCUS_OUT` /
+`NOTIFICATION_WM_WINDOW_FOCUS_OUT` actually fires is unconfirmed across desktop/mobile/web at design
+time (AC#1), so both — and their `_IN` counterparts — are listened for defensively. Per
+[[decision-012]] (`backlog/decisions/decision-012 - Focus-out-pause-covering-Android.md`), this also
+covers Android backgrounding, which has no `blur`-equivalent guarantee the way desktop browsers do.
+
+A `_focused` flag ensures `focus_lost` emits at most once per genuine focus transition (AC#2), even
+when both `_OUT` constants fire for the same underlying event; the `_IN` notifications exist solely to
+reset that flag for the next transition. There is no focus-regained signal — mirroring the oracle
+exactly, since `snake.html` has no resume-on-focus behavior to port, only pause-on-blur. No scene wires
+`focus_lost` up yet, the same "no consumer until a later screens/app-wiring task" posture as
+`input_router.gd` and `tick_driver.gd`.
+
+`game/tests/test_app_lifecycle.gd` calls `_notification()` directly with Godot's own constants (AC#3) —
+the same values the engine delivers to a live node — to verify the dedup logic on desktop without a
+real window-manager focus change. Android/web coverage isn't automatable (no harness can simulate OS-
+level backgrounding), consistent with decision-012's own note that correctness there relies on
+manual/platform testing rather than an automated test.
