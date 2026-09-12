@@ -270,3 +270,33 @@ which does not exist), not to the root; a leading colon anchors the reference to
 instead. `extension:build` runs immediately after `core:difftest` and before `game:import` in the
 top-level `check` task, so `core/zig-out/lib/libneo_snake.a` is freshly rebuilt (via the
 `:core:abi-symbols` call) before the shim links against it.
+
+## `game/bin/neo_snake.gdextension` and `game/simulation/world.gd` (TASK-027)
+
+`game/simulation/world.gd` (`class_name SimulationWorld`) is the sole `.gd` file in the repo
+allowed to reference the `NeoSnakeWorld` class — every other script goes through it instead. Each
+of its methods forwards to exactly one `NeoSnakeWorld` method (same one-call-per-method rule
+`extension/src/neo_snake_world.cpp` itself follows relative to `include/neo_snake.h`), so no
+simulation logic is duplicated at the GDScript layer either. `game/tests/test_gdextension_present.gd`
+is a deliberate, narrow exception: `ClassDB.class_exists("NeoSnakeWorld")` names the class as a
+string to verify the extension actually registered it (its own AC), which is a different thing
+from *using* `NeoSnakeWorld` as a type — it doesn't instantiate it or hold a reference to it, so it
+doesn't defeat the sole-referencer rule the way a second `NeoSnakeWorld.new()` call elsewhere would.
+That test exists specifically because a silently-unloaded GDExtension would otherwise leave
+`SimulationWorld`'s own `NeoSnakeWorld.new()` call failing (or every dependent test skipping) with
+no test pinpointing the actual cause.
+
+`game/bin/neo_snake.gdextension` is committed; the platform binaries it points at
+(`game/bin/libneo_snake.*`) stay gitignored (`*.so` and friends), rebuilt locally by
+`extension:build` or fetched as a release asset. Its `[libraries]` section currently lists:
+
+- `linux.debug.x86_64` — the only platform actually built and verified so far (TASK-026).
+- `macos.debug` / `macos.release` — no binary yet, but TASK-043 already writes to these two keys
+  as a `libneo_snake.macos.<target>.framework` bundle (not an arch-suffixed path — a fat/universal
+  framework, matching godot-cpp's own macOS convention), so pre-declaring them now means TASK-043
+  only has to add the bundle, not also edit this manifest.
+
+Windows and web keys are deliberately left out: TASK-046 (Windows) and TASK-048 (the real web
+build) each add their own keys when they land, rather than this task guessing at conventions
+neither has established yet. `compatibility_minimum` is pinned to `"4.7"`, matching
+`game/project.godot`'s own `config/features` pin, not godot-cpp's own lower `test/` default.
