@@ -104,6 +104,25 @@ pub fn build(b: *std.Build) void {
     const abi_step = b.step("abi", "Build the static library exporting the C ABI (core/abi.zig)");
     abi_step.dependOn(&b.addInstallArtifact(abi_lib, .{}).step);
 
+    // abitest (TASK-025) is the Tier-C conformance suite: it reaches abi_lib
+    // exclusively through @cImport(include/neo_snake.h) — no addImport of
+    // rng/canon/world/corpus at all, enforced separately at the source level
+    // by tools/validate_abi_test_purity.py. link_libc is required for
+    // @cImport's generated bindings; linking abi_lib supplies the actual
+    // ns_* symbol implementations behind those declarations.
+    const abitest = b.createModule(.{
+        .root_source_file = b.path("abitest.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    abitest.addIncludePath(b.path("../include"));
+    abitest.linkLibrary(abi_lib);
+    const abitest_exe = b.addTest(.{ .root_module = abitest });
+    const run_abitest = b.addRunArtifact(abitest_exe);
+    const abitest_step = b.step("abitest", "Run the Tier-C ABI conformance tests (core/abitest.zig)");
+    abitest_step.dependOn(&run_abitest.step);
+
     // fuzzrun is oracle:fuzz's (TASK-022) live Zig half: unlike difftest, it
     // takes a *fresh*, non-committed command-log path at runtime (built by
     // reference/oracle/fuzz.mjs), so it's installed to a stable path
