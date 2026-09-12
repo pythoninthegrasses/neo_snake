@@ -187,3 +187,86 @@ symbols `std.debug`'s panic machinery pulls in transitively are not a violation 
 
 Future `core/*.zig` files (TASK-018+) extend this same `build.zig` rather than inventing a second
 build graph — add a new `addTest` per module, same pattern.
+
+## `extension/SConstruct` (TASK-026)
+
+`extension/` is the GDExtension shim's own SCons build, a sibling to `core/build.zig` (see
+"Location" above), not folded into it. It `SConscript`s into `third_party/godot-cpp/SConstruct`,
+exporting `{"api_version": "4.7"}` — the version `game/project.godot`'s `config/features` already
+pins — and gets back godot-cpp's fully-configured `env` (platform detection, `env["suffix"]`,
+`env["SHLIBSUFFIX"]`, etc.) rather than reimplementing any of that.
+
+`rng`/`canon`/`world`/`abi` in `core/build.zig` all carry `.pic = true` (added alongside this task):
+`core/abi.zig`'s static library gets linked into a shared object here, and non-PIC relocations in a
+static archive fail at the final `ld -shared` step (`relocation R_X86_64_32S ... can not be used
+when making a shared object`) — PIC has to be set on every module whose code actually ends up in
+`libneo_snake.a`, not just on `abi` itself, since Zig's module system compiles each imported module
+with its own settings.
+
+`core/zig-out/lib/libneo_snake.a` is linked via `env.File("../core/zig-out/lib/libneo_snake.a")`
+appended to `LIBS`, not a bare `-lneo_snake -L...` pair — an `env.File(...)` is a real SCons node, so
+`env.Depends(library, core_lib)` makes a rebuilt core library actually trigger a relink; a bare
+linker flag carries no such dependency edge and SCons would consider the shim up to date even after
+`libneo_snake.a` changed underneath it.
+
+Two Linux-specific build-environment workarounds, both scoped to `extension/`, neither touching
+`third_party/godot-cpp` itself:
+
+- **`ARCOM`/`TEMPFILE`**: godot-cpp's own generated-bindings object count (~2000 files under
+  `third_party/godot-cpp/gen/`) overflows this system's `ARG_MAX` for a literal `ar` command line
+  ("Argument list too long"). godot-cpp's own `tools/web.py` hits the identical wall for its
+  wasm/emscripten target and works around it with `env["ARCOM_POSIX"] = env["ARCOM"]...` followed by
+  `env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"` (SCons' response-file mechanism) — `extension/SConstruct`
+  applies the same two-line pair to the Linux `env` it gets back. Both lines are required: setting
+  only the second (`TEMPFILE(ARCOM_POSIX)`) without first defining `ARCOM_POSIX` substitutes an
+  undefined variable, silently producing a no-op archive command with no error and no visible `ar`
+  invocation — the failure only surfaces one step later, as `ranlib: ... No such file`.
+- **`extension/custom.py`**: godot-cpp's Linux `use_static_cpp` option (default `True`) appends
+  `-static-libgcc -static-libstdc++`, which requires a static `libstdc++.a` — not installed by this
+  repo's base toolchain on every dev machine (only the shared `libstdc++.so` ships by default),
+  failing with `cannot find -lstdc++`. `third_party/godot-cpp/SConstruct` already supports a
+  `custom.py` options file (`customs = ["custom.py"]`) for exactly this kind of local override, but
+  `SConscript()`-included scripts run with Python's cwd changed to their own directory — a bare
+  `"custom.py"` there resolves inside `third_party/godot-cpp/`, not `extension/`. `extension/
+  SConstruct` instead passes `customs = [File("custom.py").srcnode().abspath]` through the `exports`
+  dict (godot-cpp's own `customs += Import("customs")` hook), so `extension/custom.py`'s
+  `use_static_cpp = False` default applies regardless of that cwd shift — still overridable on the
+  command line (`scons -C extension use_static_cpp=yes`) since `Variables(customs, ARGUMENTS)` lets
+  `ARGUMENTS` win.
+
+Output naming: `env.SharedLibrary("../game/bin/libneo_snake{}{}".format(env["suffix"],
+env["SHLIBSUFFIX"]), ...)`, matching `third_party/godot-cpp/test/SConstruct`'s own convention.
+`env["suffix"]` is entirely godot-cpp's own computation (`tools/godotcpp.py`) — platform, target,
+arch, and conditionally `.nothreads` when `threads=no` — so `scons -C extension threads=no` produces
+`game/bin/libneo_snake.linux.template_debug.x86_64.nothreads.so` with no extra code here; `game/bin/`
+is where `game/bin/neo_snake.gdextension` (TASK-027) will point its per-platform `[libraries]`
+entries.
+
+`extension/src/register_types.{hpp,cpp}` mirrors `third_party/godot-cpp/test/src/register_types.*`
+exactly (the `GDExtensionBool GDE_EXPORT neo_snake_library_init(...)` entry point, `GDREGISTER_CLASS`
+in `initialize_neo_snake_module`). `extension/src/neo_snake_world.{hpp,cpp}` is the actual shim: one
+`NeoSnakeWorld` method per `include/neo_snake.h` `ns_*` function, no simulation logic reimplemented.
+Two details worth calling out:
+
+- **`BIND_CONSTANT`, not `BIND_ENUM_CONSTANT`**: `include/neo_snake.h`'s result/status/dir/event
+  codes are anonymous C enums (`enum { NS_OK = 0, ... };`). `BIND_ENUM_CONSTANT` calls a
+  `godot::GetTypeInfo<T>`-dependent template to look up the enum's registered name, which only
+  resolves for a properly `VARIANT_ENUM_CAST`-registered Variant enum type — an anonymous C enum has
+  no such specialization and fails with `incomplete type 'godot::GetTypeInfo<<unnamed enum>, void>'`.
+  `BIND_CONSTANT` calls `ClassDB::bind_integer_constant` directly, with no `GetTypeInfo` involved, and
+  works for any integer-convertible constant regardless of its C++ enum type.
+- **Manual `ns_world` alignment**: `NeoSnakeWorld` owns a `std::vector<uint8_t> storage_` sized
+  `ns_world_size(config) + ns_world_align() - 1`, then carves out an `ns_world_align()`-aligned
+  pointer by hand (`init()` in `neo_snake_world.cpp`) — `std::vector`'s own default allocation
+  alignment is not guaranteed to satisfy whatever `ns_world_align()` reports.
+
+### `task check` wiring
+
+New `taskfiles/extension.yml`, included in the root `taskfile.yml` as `extension:`, with one
+`build` task (`dir: extension`, `cmds: [{task: :core:abi-symbols}, scons]`) — the leading-colon
+`:core:abi-symbols` reference is required because Task resolves a bare `core:abi-symbols` from
+*inside* an included taskfile relative to that file's own namespace (`extension:core:abi-symbols`,
+which does not exist), not to the root; a leading colon anchors the reference to the root Taskfile
+instead. `extension:build` runs immediately after `core:difftest` and before `game:import` in the
+top-level `check` task, so `core/zig-out/lib/libneo_snake.a` is freshly rebuilt (via the
+`:core:abi-symbols` call) before the shim links against it.

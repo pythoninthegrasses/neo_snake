@@ -12,10 +12,16 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run Tier-A unit tests for the core modules");
 
+    // rng/canon/world carry `.pic = true` because they're also compiled
+    // into abi_lib below (via addImport), which the GDExtension shim
+    // (extension/SConstruct, TASK-026) links into a shared library --
+    // non-PIC relocations in that static archive fail at that final
+    // `ld -shared` step. Harmless for their own plain test binaries here.
     const rng = b.createModule(.{
         .root_source_file = b.path("rng.zig"),
         .target = target,
         .optimize = optimize,
+        .pic = true,
     });
     const rng_test = b.addTest(.{ .root_module = rng });
     test_step.dependOn(&b.addRunArtifact(rng_test).step);
@@ -24,6 +30,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("canon.zig"),
         .target = target,
         .optimize = optimize,
+        .pic = true,
     });
     const canon_test = b.addTest(.{ .root_module = canon });
     test_step.dependOn(&b.addRunArtifact(canon_test).step);
@@ -35,6 +42,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("world.zig"),
         .target = target,
         .optimize = optimize,
+        .pic = true,
     });
     world.addImport("rng", rng);
     world.addImport("canon", canon);
@@ -91,6 +99,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("abi.zig"),
         .target = target,
         .optimize = optimize,
+        .pic = true,
     });
     abi.addImport("rng", rng);
     abi.addImport("canon", canon);

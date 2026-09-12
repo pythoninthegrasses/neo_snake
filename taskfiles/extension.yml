@@ -1,0 +1,20 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+tasks:
+  build:
+    desc: "Build the GDExtension shim (extension/SConstruct) linking core/zig-out/lib/libneo_snake.a"
+    summary: |
+      task extension:build
+
+      Runs `scons` inside extension/, which SConscripts into
+      third_party/godot-cpp's own SConstruct (api_version "4.7"), links
+      core/zig-out/lib/libneo_snake.a as an env.File(...) dependency (so a
+      rebuilt core lib triggers a relink, unlike a bare -lneo_snake flag),
+      and produces game/bin/libneo_snake<suffix><SHLIBSUFFIX> — the shared
+      library game/bin/neo_snake.gdextension (TASK-027) will point to.
+    dir: extension
+    cmds:
+      - task: :core:abi-symbols
+      - scons
