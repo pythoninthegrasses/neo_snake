@@ -42,6 +42,11 @@ Simulation is **fixed-timestep with an accumulator**, deliberately decoupled fro
 - `while (S.acc >= tickMs()) advance()`, guarded by `guard++ < 6` to bound catch-up work.
 - `tickMs()` is re-read *inside* the loop, because eating can raise the speed mid-frame.
 
+  This exact accumulator (the 64ms clamp, the 6-iteration catch-up guard, the per-iteration re-read
+  of the current tick period) lives in `core/world.zig`'s `pump()`/`ns_pump`, not in the Godot port's
+  own GDScript — `game/simulation/tick_driver.gd`'s `advance_frame` is a pure, clock-free forwarding
+  call onto it, see [build-layout.md](build-layout.md).
+
 Speed: `speedMul() = 1 + min(score, 40) * 0.035`, applied as `BASE_MS / speedMul()` and floored at
 `MIN_MS`. Tuning difficulty means editing `BASE_MS` (130) / `MIN_MS` (55) — not framerate. (These
 two and the derived `TICK_PERIOD_US` table are ABI-frozen in the Godot port, per
