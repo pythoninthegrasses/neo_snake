@@ -62,5 +62,6 @@ tasks:
       - task: core:abitest
       - task: core:difftest
       - task: extension:build
+      - task: game:boundary-check
       - task: game:import
       - task: game:test

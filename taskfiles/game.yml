@@ -33,3 +33,19 @@ tasks:
     dir: "{{.ROOT_DIR}}"
     cmds:
       - ./tools/run.py godot --headless --path game -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://tests --ignoreHeadlessMode
+
+  boundary-check:
+    desc: "Fail on any .gd file outside game/simulation/ crossing the sim boundary, or an undeclared platform binary in game/bin/ (TASK-029)"
+    summary: |
+      task game:boundary-check
+
+      Runs tools/validate_simulation_boundary.py, which scans every .gd
+      file outside game/simulation/ (excluding vendored game/addons/) for a
+      NeoSnakeWorld reference, a sim-verb name call (reference/snake.html's
+      advance/placeFood/tickMs/speedMul), or global RNG usage, then
+      separately walks game/bin/ for platform binaries not referenced by
+      any key in neo_snake.gdextension -- the "a line got dropped while
+      the binary is still sitting there" failure mode.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/validate_simulation_boundary.py

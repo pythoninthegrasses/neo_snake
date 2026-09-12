@@ -329,3 +329,36 @@ Windows and web keys are deliberately left out: TASK-046 (Windows) and TASK-048 
 build) each add their own keys when they land, rather than this task guessing at conventions
 neither has established yet. `compatibility_minimum` is pinned to `"4.7"`, matching
 `game/project.godot`'s own `config/features` pin, not godot-cpp's own lower `test/` default.
+
+## `tools/validate_simulation_boundary.py` (TASK-029)
+
+Mirrors azure-dreams' `validate_simulation_boundary.py` with the failure direction flipped: that
+script bans engine dependencies *inside* a GDScript-native simulation directory, whereas here the
+real simulation lives in `core/*.zig`, reached only through the GDExtension, so this scans every
+`.gd` file *outside* `game/simulation/` instead. It fails on three things: a `NeoSnakeWorld`
+reference (the sole-referencer rule `game/simulation/world.gd`'s header already documents,
+TASK-027); a call to one of reference/snake.html's own internal simulation verb names (`advance`,
+`place_food`/`placeFood`, `tick_ms`/`tickMs`, `speed_mul`/`speedMul`) — `world.gd`'s actual public
+wrapper API (`init`, `reset`, `queue_dir`, `step`, `pump`, `player_view_get`, `body_copy`) is
+deliberately not on this list, since that's the sanctioned way the rest of the game talks to the
+sim; and global RNG usage (`randomize`/`randi`/`randf`/`seed`/etc.), since the sim has its own
+seeded RNG (`core/rng.zig`) and nothing outside it should reach for the engine's instead.
+`game/tests/test_gdextension_present.gd`'s `ClassDB.class_exists("NeoSnakeWorld")` call (see above)
+is allowlisted by exact pattern, since it names the class without depending on its API.
+`game/addons/` (vendored gdUnit4, whose own fuzzers legitimately call `randi`/`seed` internally) and
+generated directories (`.godot/`, `reports/`) are excluded outright — they aren't this repo's code.
+
+The second half of the script is a separate, non-regex check: it parses `neo_snake.gdextension` via
+`configparser` (the file is INI-formatted) and walks `game/bin/` for actual platform binary
+artifacts (`.so`/`.dylib`/`.dll` files, `.framework` directories), asserting each one is referenced
+by some `[libraries]` key. This is binary-driven rather than key-driven deliberately: TASK-027 already
+pre-declares `macos.debug`/`macos.release` keys with no binary behind them yet (see above), so a
+key-driven "every declared key needs a binary on disk" check would permanently fail on any
+single-platform dev machine. Binary-driven instead catches the actual failure this task cares about
+— a platform key silently dropped from the file while its binary is still sitting in `game/bin/`,
+which nothing else in the suite would otherwise notice.
+
+Wired in as `game:boundary-check` (`taskfiles/game.yml`), placed in the top-level `check` task
+immediately after `extension:build` and before `game:import` — the same "cheap static check before
+a slower Godot step" ordering already used for `core:abitest-purity`, and it needs `extension:build`
+to have just run so the orphaned-binary check has a real artifact to check against.
