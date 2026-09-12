@@ -50,3 +50,22 @@ tasks:
     dir: "{{.ROOT_DIR}}"
     cmds:
       - node reference/oracle/regen_corpus.mjs --verify
+
+  fuzz:
+    desc: "Discovery fuzzing: fresh random seeds through both the JS oracle and a live Zig core build (not part of task check)"
+    summary: |
+      task oracle:fuzz -- --count N [--ticks N]
+
+      Builds core/fuzzrun.zig (a live executable, not the hermetic
+      core:difftest), then generates N fresh random command logs and drives
+      each through both reference/oracle/sim.mjs and that build, diffing
+      every tick's checksum. Requires a live node and a live zig.
+
+      Discovery, not regression — deliberately NOT part of task check; run
+      this nightly in CI instead. See docs/corpus-format.md's "Promoting a
+      fuzz failure" section for turning a mismatch into a permanent
+      regression trace via task oracle:regen.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - (cd core && zig build fuzzrun)
+      - node reference/oracle/fuzz.mjs {{.CLI_ARGS}}

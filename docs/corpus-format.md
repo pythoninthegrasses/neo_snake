@@ -150,6 +150,33 @@ pub const entries = [_]Entry{
 `manifest.json`'s `files`. `path` is relative to `game/` (matching TASK-028's `res://tests/corpus/`
 access), since `core/` and `game/` are sibling directories in this repo's layout.
 
+## Promoting a fuzz failure (`task oracle:fuzz`)
+
+`task oracle:fuzz -- --count N` (TASK-022) is discovery, not regression: every run drives N
+*fresh*, non-committed command logs (`reference/oracle/fuzz.mjs`, real randomness via
+`node:crypto`, not a seeded/reproducible stream) through both `reference/oracle/sim.mjs` and a
+live build of `core/fuzzrun.zig`, and diffs every tick's checksum. It is deliberately **not** part
+of `task check` (`taskfiles/oracle.yml`) — it runs nightly in CI instead, since a failure here means
+new randomly-discovered input, not a known-good fixture drifting.
+
+When a run reports a `MISMATCH`, it prints the exact command log that reproduced it (preserved
+under a temp directory named in the report, since normal cleanup only happens when every seed in
+the run matched) along with the seed/board/wrap it used and the first divergent tick. To turn that
+one-off discovery into a permanent regression test, exactly like any other corpus trace
+(`docs/corpus-format.md` above, TASK-015):
+
+1. Copy the preserved file into `reference/oracle/corpus/commands/` under a descriptive name (the
+   report's own `cp ... && task oracle:regen` line does this with the fuzz-generated name; rename
+   it to describe *what* it found — e.g. `wrap-diagonal-off-by-one.commands.jsonl` — the same way
+   the hand-designed traces are named for the edge case they cover, not left as `fuzz-<hex>`).
+2. Run `task oracle:regen` — this is the same command-log-to-trace machinery TASK-015's traces
+   already go through; it is never invoked by `oracle:fuzz` itself, only by this manual promotion
+   step, so a promoted trace is reviewable in a normal diff before it lands.
+3. Fix whichever side (`core/world.zig` or `reference/oracle/sim.mjs`) the diff shows to be wrong,
+   and confirm the newly-committed trace now passes `task core:difftest`.
+4. Commit the new command log, the regenerated trace/manifest/`core/corpus.zig`, and the fix
+   together, so the regression is provably tied to the bug it caught.
+
 ## `CORPUS_VERSION`
 
 A plain `u32` constant, independent of `NS_ABI_VERSION`/`NS_CANON_VERSION` (`docs/abi-decisions.md`
