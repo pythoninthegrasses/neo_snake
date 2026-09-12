@@ -5,7 +5,7 @@
       "source": "pythoninthegrass/ai_skills",
       "sourceType": "github",
       "skillPath": "skills/gnhf/SKILL.md",
-      "computedHash": "52f3646bd0065afc5074838c34873b87532d5482afdd70550c6b18a376b45efe"
+      "computedHash": "4e99363f617f48338fba843aa65094624891c2587b04b2961d4d45385b996859"
     },
     "godot-gdscript-patterns": {
       "source": "wshobson/agents",
