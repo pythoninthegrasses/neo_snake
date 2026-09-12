@@ -513,3 +513,40 @@ jitter sitting anywhere between the two thresholds can never double-fire. `refer
 no gamepad support at all — this is a wholly new capability, not a port of existing oracle behavior,
 so per DoD#2 there is nothing to record as a *deviation*; the one genuine oracle-behavior deviation
 this task introduces (the swipe threshold) is already covered by decision-011 above.
+
+## `game/platform/save_store.gd` (TASK-034)
+
+`SaveStore` takes its base directory as a constructor parameter (AC#1) rather than hardcoding
+`user://`, so tests point it at a throwaway directory and never touch real player save data. It
+replaces the oracle's single `localStorage["snake.best"]` scalar (`snake.html:294`, `389`) with a
+versioned on-disk shape per [[decision-009]]
+(`backlog/decisions/decision-009 - Per-mode-best-score-and-persisted-mode.md`): a v2 document holding
+`best_scores` per mode and the last-selected mode, rather than one shared scalar. `SCHEMA_VERSION`
+plus a `_migrations` dict of `Callable`s (built in `_init()`, since GDScript can't hold an unbound
+instance-method reference in a `const`) carries a v1 `{"version": 1, "best": <int>}` document forward
+to v2, assigning the migrated scalar to the `"wall"` mode (the oracle's only mode) and leaving other
+modes at `content/tuning.json`'s `scoring.best_score_defaults`. Those defaults, and `"wall"` as
+`content/modes.json`'s default mode, are hardcoded rather than loaded via `ContentLoader` at runtime,
+so a missing or malformed content file can never break a save/load — this stays a self-contained
+file-I/O primitive. JSON reads follow `content/loader.gd`'s established `JSON.new()` + `.parse()`
+convention, and — since JSON numbers always decode as `TYPE_FLOAT` in Godot, the same caveat
+`loader.gd` documents on its schema — `_normalize_v2` casts `best_scores` values back to `int` on the
+way out so callers never re-cast.
+
+Writes rotate `tmp → bak → dst` (AC#3) rather than overwriting `dst` directly: the new document is
+written to `save.json.tmp`, any existing `save.json` is renamed to `save.json.bak`, then `save.json.tmp`
+is promoted to `save.json`. `load_or_default` falls back to `save.json.bak` if `save.json` is missing or
+fails to parse, so a crash between those two renames still recovers the last-known-good save;
+`game/tests/test_save_store.gd` fabricates that exact interrupted-write filesystem state directly via
+`FileAccess`/`DirAccess` (bypassing `SaveStore`'s own API) to exercise the fallback for real, plus a
+normal two-writes-in-a-row test confirming the rotation itself. Per [[decision-013]]
+(`backlog/decisions/decision-013 - Debounced-disk-writes.md`), deciding *when* to call `save()` (e.g.
+debounced at game-over/pause/background) is a caller concern, not this class's — `SaveStore` only
+implements *how* a write lands safely on disk.
+
+`parse_legacy_best` (AC#4) mirrors the oracle's `Number(x) || 0` fallback (`snake.html:294`) as a pure,
+directly-testable function with no `JavaScriptBridge` dependency. The actual web-import path,
+`import_web_legacy_best`, is a thin wrapper gated behind `OS.has_feature("web")` that calls
+`JavaScriptBridge.eval` and folds the result through the same v1→v2 migration — untestable in headless
+native Godot, so it carries a doc comment describing the manual web-export verification procedure
+instead, per AC#4's "or documented manual check" allowance.
