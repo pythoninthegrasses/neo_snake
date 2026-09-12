@@ -25,9 +25,10 @@ with the integer tick-period table of `docs/abi-decisions.md` freeze #5), `core/
 committed, TASK-014) is generated data — the list of committed `game/tests/corpus/*.jsonl` trace
 paths — consumed by `core/difftest.zig` (TASK-020) to enumerate which files to replay; it is not
 part of the `test` step's build graph. Each new Zig source this phase adds is exposed as its own
-root module in `build.zig` so `zig build test` can run its Tier-A tests independently; there is no
-single top-level `lib.zig` aggregator yet — add one only when a later task (e.g. TASK-024's
-`core/abi.zig`) actually needs to import more than one of these together.
+root module in `build.zig` so `zig build test` can run its Tier-A tests independently. `core/abi.zig`
+(TASK-024) is the first module that imports more than one of these together (`rng`, `canon`,
+`world`) — it is the C ABI boundary layer, not a `lib.zig`-style internal aggregator, and is built
+as a static library rather than a test module; see `zig build abi` below.
 
 ## `zig build test`
 
@@ -71,6 +72,17 @@ before it (anchors occur every 64 ticks) — it does not re-simulate from the an
 the same `world.zig` code from the same start can only reproduce the bytes already computed in the
 single forward pass; the anchor is the only independent ground truth available between checksums.
 
+## `zig build abi`
+
+`build.zig` also defines a static library target (`core/abi.zig`, TASK-024): a `b.createModule`
+importing `rng`, `canon`, and `world` (the same module objects `test` already builds), built via
+`b.addLibrary(.{ .name = "neo_snake", .linkage = .static, .root_module = abi })` — Zig 0.16.0's
+static-library API; there is no `b.addStaticLibrary`. Unlike `fuzzrun`, this is attached to the
+default `install` step (`b.installArtifact`) as well as its own named `abi` step, since
+`libneo_snake.a` is the actual cross-language deliverable (the GDExtension shim, TASK-025's Tier-C
+conformance tests link against it), not a dev-only tool. `docs/abi-impl.md` covers what
+`core/abi.zig` does that `include/neo_snake.h` and this doc don't already settle.
+
 ## `zig build fuzzrun`
 
 `build.zig` also defines a `fuzzrun` executable (`core/fuzzrun.zig`, TASK-022), the live Zig half of
@@ -102,11 +114,21 @@ that every declared type/function is genuinely usable, not just syntactically pr
 without linking is what makes this possible: an unresolved `extern` reference is legal C right up
 until something tries to resolve it.
 
+`core:abi-symbols` (TASK-024) runs immediately after: `zig build abi` then `nm -g --defined-only
+zig-out/lib/libneo_snake.a`, asserting every defined global symbol name matches `^ns_`. This is the
+mechanical form of that task's AC #1 ("no other exported symbols") — `core/abi.zig` is the only Zig
+file allowed to `export` (AC #2), and this check is what actually enforces it in `task check` rather
+than relying on a one-off manual `nm` read.
+
 ## No allocator, no libc
 
 Both constraints are properties of the **library code** (`core/rng.zig`, `core/canon.zig`,
 `core/world.zig`), not something `build.zig`
-can mechanically assert on its own:
+can mechanically assert on its own. `core/abi.zig` (TASK-024) is deliberately not bound by either:
+it's the ABI boundary layer, expected to be linked into a host (the GDExtension shim via
+godot-cpp, TASK-025's C conformance harness) that already links libc, so the compiler-rt/libc
+symbols `std.debug`'s panic machinery pulls in transitively are not a violation — see
+`docs/abi-impl.md`.
 
 - **No libc**: `build.zig` must never call `.linkLibC()` for these modules, and the source files
   must never `@cImport` or otherwise pull in a libc dependency. Required so the same code can

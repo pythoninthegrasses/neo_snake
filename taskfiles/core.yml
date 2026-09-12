@@ -31,6 +31,28 @@ tasks:
     cmds:
       - zig cc -std=c11 -Wall -Wextra -I../include -c abi_header_check.c -o /dev/null
 
+  abi-symbols:
+    desc: "Build core/abi.zig's static library and assert it exports only ns_* symbols (TASK-024 AC #1)"
+    summary: |
+      task core:abi-symbols
+
+      Runs `zig build abi` to produce zig-out/lib/libneo_snake.a, then greps
+      its defined (non-undefined) global symbol table with `nm -g
+      --defined-only`. Every entry must match `^ns_` — core/abi.zig is the
+      only Zig file in the project allowed to `export` (AC #2), and this is
+      the mechanical check that nothing besides its intended ns_* surface
+      leaked into the library's global symbol table.
+    dir: core
+    cmds:
+      - zig build abi
+      - |
+        bad=$(nm -g --defined-only zig-out/lib/libneo_snake.a | awk '{print $3}' | grep -vE '^ns_' || true)
+        if [ -n "$bad" ]; then
+          echo "Unexpected exported symbols in libneo_snake.a:" >&2
+          echo "$bad" >&2
+          exit 1
+        fi
+
   difftest:
     desc: "Replay the committed Tier-B JSONL corpus against core/world.zig and assert every checksum/anchor matches"
     summary: |

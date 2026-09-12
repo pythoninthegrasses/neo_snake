@@ -80,6 +80,30 @@ pub fn build(b: *std.Build) void {
     const difftest_step = b.step("difftest", "Replay the committed JSONL corpus against core/world.zig");
     difftest_step.dependOn(&run_difftest.step);
 
+    // abi.zig (TASK-024) is the only Zig file in the project with `export`
+    // symbols, wrapping rng/canon/world behind include/neo_snake.h's exact
+    // surface. Built as a static library so a C/C++ consumer (the
+    // GDExtension shim, TASK-025's Tier-C conformance tests) can link
+    // against it without touching Zig's own module system. Attached to the
+    // default "install" step (unlike fuzzrun below) since it's the actual
+    // deliverable, not a dev-only tool.
+    const abi = b.createModule(.{
+        .root_source_file = b.path("abi.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    abi.addImport("rng", rng);
+    abi.addImport("canon", canon);
+    abi.addImport("world", world);
+    const abi_lib = b.addLibrary(.{
+        .name = "neo_snake",
+        .linkage = .static,
+        .root_module = abi,
+    });
+    b.installArtifact(abi_lib);
+    const abi_step = b.step("abi", "Build the static library exporting the C ABI (core/abi.zig)");
+    abi_step.dependOn(&b.addInstallArtifact(abi_lib, .{}).step);
+
     // fuzzrun is oracle:fuzz's (TASK-022) live Zig half: unlike difftest, it
     // takes a *fresh*, non-committed command-log path at runtime (built by
     // reference/oracle/fuzz.mjs), so it's installed to a stable path

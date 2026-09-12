@@ -42,9 +42,11 @@ pub const BASE_MS = 130;
 pub const MIN_MS = 55;
 
 /// sim.mjs's frame() dt clamp: a long frame gap can't fast-forward the sim.
-const MAX_DT_US = 64 * 1000;
+/// `pub` so core/abi.zig's ns_pump (TASK-024) can reproduce this exact loop
+/// while recording a per-tick event, instead of duplicating the constant.
+pub const MAX_DT_US = 64 * 1000;
 /// sim.mjs's frame() catch-up guard: at most this many advances per pump.
-const MAX_STEPS = 6;
+pub const MAX_STEPS = 6;
 
 /// The frozen integer tick-period table (docs/abi-decisions.md freeze #5,
 /// derived in task-010): the five values
