@@ -15,6 +15,9 @@ const DIR_DOWN := NeoSnakeWorld.NS_DIR_DOWN
 const DIR_LEFT := NeoSnakeWorld.NS_DIR_LEFT
 const DIR_RIGHT := NeoSnakeWorld.NS_DIR_RIGHT
 const SPEED_SOURCE_SCORE_TABLE := NeoSnakeWorld.NS_SPEED_SOURCE_SCORE_TABLE
+const EVENT_EAT := NeoSnakeWorld.NS_EVENT_EAT
+const EVENT_DIE := NeoSnakeWorld.NS_EVENT_DIE
+const EVENT_WIN := NeoSnakeWorld.NS_EVENT_WIN
 
 var _world: NeoSnakeWorld = NeoSnakeWorld.new()
 
