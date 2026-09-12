@@ -54,6 +54,7 @@ const TUNING_SCHEMA := {
 		"checkerboard_alpha": "number",
 		"grid_line_alpha": "number",
 		"device_pixel_ratio_cap": "number",
+		"pause_vignette_alpha": "number",
 	},
 	"input": {
 		"swipe_threshold_cell_fraction": "number",

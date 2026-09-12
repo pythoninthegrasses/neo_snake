@@ -438,3 +438,43 @@ MAX_STEPS per call and carries the remainder over"` test, so the hitch's clamped
 contribution and the 62000us carried remainder both match an already-verified worked example rather
 than a number invented for this test alone. A separate test statically greps the source for clock
 reads, operationalizing AC#1 rather than leaving it to code review alone.
+
+## `game/presentation/board/{board_geometry,fx_state,board_view}.gd` (TASK-032)
+
+`BoardView` (`Control`) renders one player's board in a single `_draw()` call, statement order
+matching `reference/snake.html`'s `render()` back-to-front layering exactly (`snake.html:433-531`):
+background, checkerboard, grid, food, snake body (tail-first), eyes, particles, flash overlay, pause
+vignette. `BoardGeometry.DRAW_LAYER_ORDER` names that same sequence as data, and
+`game/tests/test_board_geometry.gd` pins it directly, so the ordering invariant is an enforced check
+rather than something only code review protects.
+
+All geometry/color math (segment weight/pad/color, food pulse/pad, corner radius, eye offsets/radius,
+grid line offsets, the checkerboard `Image` bake, and `docs/canonical-state.md`'s 44-byte canonical
+header decode) lives in `BoardGeometry`, a pure static `RefCounted` with no `Node`/viewport
+dependency — every number is pinned by a gdUnit4 test without instantiating a scene. `BoardView`
+itself is the only file that issues actual `draw_*()` calls. Neither `SimulationWorld.player_view_get`
+nor `.body_copy` expose cols/rows/food position, so `BoardGeometry.decode_canon_header` reads them
+directly out of `world.serialize()`'s canonical bytes — a documented wire format, not a workaround.
+
+Grid lines use a float `Color` (alpha assigned directly, not `Color8`), matching AC#3's requirement
+that `0.019`-scale alpha values not round through 8-bit quantization. The checkerboard bake can't
+avoid that same quantization — `Image.FORMAT_RGBA8` is intrinsic to AC#2's single-baked-texture
+requirement — so per [[decision-023]]
+(`backlog/decisions/decision-023 - Checkerboard-alpha-quantized-by-8-bit-baked-texture.md`) the
+resulting ~3% alpha deviation is accepted as a cost of that approach, not a latent bug.
+
+`FxState` mirrors the oracle's `burst()`/`decayFx()` (`snake.html:411-430`) as cosmetic, render-only
+particle/flash state that never feeds back into `SimulationWorld` or `docs/canonical-state.md`.
+Its randomness comes from a small hand-rolled xorshift32 PRNG rather than Godot's
+`RandomNumberGenerator`: `tools/validate_simulation_boundary.py`'s `game:boundary-check` (TASK-029)
+bans `randi`/`randf`/`randi_range`/`randf_range`/`seed`/`randomize` anywhere outside
+`game/simulation/`, and that regex matches those names called on any receiver, not just Godot's
+global RNG — so a local `RandomNumberGenerator` instance still trips the gate. Rather than relaxing
+that check, `FxState` avoids the banned identifiers entirely.
+
+Godot's 2D `CanvasItem` API has no equivalent to the oracle's `ctx.shadowBlur` glow on food/snake-head
+and no single-call filled-rounded-rect primitive; per
+[[decision-022]] (`backlog/decisions/decision-022 - No-canvas-shadow-glow-blur-in-board_view.gd.md`),
+`board_view.gd` fills with flat colors (same shape/color/layer order, no glow) via `StyleBoxFlat` +
+`draw_style_box` for rounded rects, judged disproportionate scope for a data-driven renderer and not
+required by any of this task's Acceptance Criteria.
