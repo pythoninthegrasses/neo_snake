@@ -1,0 +1,41 @@
+#!/usr/bin/env python
+
+# Thin GDExtension shim build (TASK-026): SConscript into third_party/godot-cpp's
+# own SConstruct exactly the way godot-cpp's own test/SConstruct does, pinned to
+# the game's Godot version (game/project.godot's config/features "4.7").
+#
+# SConscript()-included scripts run with Python's cwd changed to their own
+# directory, so a bare "custom.py" there would resolve inside
+# third_party/godot-cpp/, not here -- pass this dir's custom.py by absolute
+# path via godot-cpp's own `customs` export hook (SConstruct: `customs +=
+# Import("customs")`) instead.
+customs = [File("custom.py").srcnode().abspath]
+env = SConscript("../third_party/godot-cpp/SConstruct", {"api_version": "4.7", "customs": customs})
+
+# godot-cpp's own generated-bindings object count blows past this system's
+# ARG_MAX for a bare `ar` invocation ("Argument list too long"); godot-cpp's
+# own web.py platform hits the same wall and works around it the same way,
+# via the same two-line ARCOM_POSIX + TEMPFILE(ARCOM_POSIX) pair (tools/web.py).
+env["ARCOM_POSIX"] = env["ARCOM"].replace("$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
+env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"
+
+env.Append(CPPPATH=["src/", "../include"])
+sources = Glob("src/*.cpp")
+
+# Link core/zig-out/lib/libneo_snake.a (core/abi.zig, TASK-024) as an env.File(...)
+# rather than -lneo_snake -Lpath: a bare linker flag doesn't tell SCons the .a is
+# a real input, so a rebuilt core lib would silently not trigger a relink here.
+core_lib = env.File("../core/zig-out/lib/libneo_snake.a")
+env.Append(LIBS=[core_lib])
+
+# Output name and directory match godot-cpp's own test/SConstruct convention
+# (env["suffix"] already encodes platform/target/arch/.nothreads); game/bin/ is
+# where game/bin/neo_snake.gdextension (TASK-027) points its per-platform
+# [libraries] entries.
+library = env.SharedLibrary(
+    "../game/bin/libneo_snake{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=sources,
+)
+env.Depends(library, core_lib)
+
+Default(library)
