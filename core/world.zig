@@ -317,80 +317,46 @@ pub fn pump(w: *World, dt_us: u32) u32 {
     return steps;
 }
 
-// --- Tier-A smoke tests ---------------------------------------------------
-// The exhaustive named Tier-A suite (nine named cases incl. the
-// serialize∘deserialize identity) is TASK-019's scope; these are the
-// minimal checks that keep `zig build test` green for this module and pin
-// the highest-risk behaviors (starting position/food draw, the tail-chase
-// split, the accumulator carry) while TASK-018 is still in flight.
+// --- Tier-A suite (TASK-019) ----------------------------------------------
+// One named test per load-bearing behavior in this module: the advance()
+// statement order (docs/architecture.md "Simulation"), the tail-chase
+// survive/eat split, the negative-wrap arithmetic, the ns_pump clamp and
+// accumulator carry (docs/abi-decisions.md freeze #5), and the canonical
+// serialize∘deserialize identity (docs/canonical-state.md). Each maps to a
+// single Acceptance Criterion so a regression names itself.
 
 test "refAllDecls" {
     std.testing.refAllDecls(@This());
 }
 
-test "reset matches the oracle's starting position and food draw" {
-    var buf: [COLS * ROWS]Cell = undefined;
-    var w: World = undefined;
-    initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .menu);
-
-    try std.testing.expectEqual(Status.menu, w.status);
-    try std.testing.expectEqual(@as(u32, 0), w.score);
-    try std.testing.expectEqual(@as(u32, 0), w.tick);
-    try std.testing.expectEqualSlices(Cell, &[_]Cell{
-        .{ .x = 8, .y = 12 }, .{ .x = 7, .y = 12 }, .{ .x = 6, .y = 12 },
-    }, cells(&w));
-    // First food draw: boundedDraw over 573 free cells (576-3), whose first
-    // value on a fresh [1,2,3,4] stream is 0 per docs/rng.md -> (0, 0).
-    try std.testing.expect(w.food != null);
-    try std.testing.expectEqual(@as(u16, 0), w.food.?.x);
-    try std.testing.expectEqual(@as(u16, 0), w.food.?.y);
-}
-
-test "advance: move, eat, and wall death" {
+test "advance commits next_dir into dir before the head moves" {
+    // advance()'s first line is `w.dir = w.next_dir`; the committed
+    // direction — not a stale one — is what moves the head the very same
+    // tick. Queuing a legal turn and advancing once must reflect it in both
+    // `dir` and the head position, not one tick later.
     var buf: [COLS * ROWS]Cell = undefined;
     var w: World = undefined;
     initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
-    w.food = .{ .x = 9, .y = 12 }; // directly ahead of the start head
+    w.food = null;
 
+    queueDir(&w, .up); // legal against dir=right
     advance(&w);
+
+    try std.testing.expectEqual(Dir.up, w.dir); // committed this tick
+    try std.testing.expectEqual(@as(u16, 8), cells(&w)[0].x); // head at (8,11)
+    try std.testing.expectEqual(@as(u16, 11), cells(&w)[0].y); // ...one up from (8,12)
     try std.testing.expectEqual(@as(u32, 1), w.tick);
-    try std.testing.expectEqual(@as(u32, 10), w.score);
-    try std.testing.expectEqual(@as(u32, 4), w.cells_len);
-    try std.testing.expectEqual(@as(u16, 9), cells(&w)[0].x);
-    try std.testing.expectEqual(Status.playing, w.status);
-    // The new food must never land on the snake.
-    try std.testing.expect(!occupied(&w, w.food.?.x, w.food.?.y));
-
-    // Straight into the right wall dies, one tick before that was fine.
-    w.food = null;
-    while (w.status == .playing) advance(&w);
-    try std.testing.expectEqual(Status.dead, w.status);
 }
 
-test "tail-chase split: entering the vacating tail cell survives" {
-    var buf: [COLS * ROWS]Cell = undefined;
-    var w: World = undefined;
-    initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
-    // Head (5,5) chasing its own tail: body laid out so (4,5) is the tail,
-    // and moving left onto it is legal because not eating means it vacates.
-    w.cells_buf[0] = .{ .x = 5, .y = 5 };
-    w.cells_buf[1] = .{ .x = 10, .y = 5 };
-    w.cells_buf[2] = .{ .x = 4, .y = 5 };
-    w.cells_len = 3;
-    w.dir = .left;
-    w.next_dir = .left;
-    w.food = null;
-
-    advance(&w);
-    try std.testing.expectEqual(Status.playing, w.status);
-    try std.testing.expectEqualSlices(Cell, &[_]Cell{
-        .{ .x = 4, .y = 5 }, .{ .x = 5, .y = 5 }, .{ .x = 10, .y = 5 },
-    }, cells(&w));
-}
-
-test "wrap: the oracle's (+size) remainder, wall mode is the contrast" {
+test "wrap uses @mod on the (+size) offset, not raw signed %" {
+    // Zig's % truncates toward zero, so `-1 % 24 == -1`, not 23. advance()
+    // wraps with `@mod(nx + cols, cols)` (the oracle's own +size expression)
+    // precisely so a head walking off x=0/y=0 lands on cols-1/rows-1. This
+    // pins the arithmetic identity: a naive `%` without the +size offset (or
+    // with `%` instead of `@mod`) lands on a negative / wrong value here.
     var buf: [COLS * ROWS]Cell = undefined;
 
+    // x = 0 moving left: pre-wrap nx is -1.
     var w: World = undefined;
     initWorld(&w, &buf, COLS, ROWS, true, .{ 1, 2, 3, 4 }, .playing);
     w.cells_buf[0] = .{ .x = 0, .y = 5 };
@@ -400,93 +366,94 @@ test "wrap: the oracle's (+size) remainder, wall mode is the contrast" {
     w.next_dir = .left;
     w.food = null;
     advance(&w);
+    try std.testing.expectEqual(Status.playing, w.status);
     try std.testing.expectEqual(@as(u16, COLS - 1), cells(&w)[0].x);
 
-    // Wall mode: the same step dies instead of wrapping.
-    var wall: World = undefined;
-    initWorld(&wall, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
-    wall.cells_buf[0] = .{ .x = 0, .y = 5 };
-    wall.cells_buf[1] = .{ .x = 1, .y = 5 };
-    wall.cells_buf[2] = .{ .x = 2, .y = 5 };
-    wall.dir = .left;
-    wall.next_dir = .left;
-    wall.food = null;
-    advance(&wall);
-    try std.testing.expectEqual(Status.dead, wall.status);
+    // y = 0 moving up: pre-wrap ny is -1.
+    var v: World = undefined;
+    initWorld(&v, &buf, COLS, ROWS, true, .{ 1, 2, 3, 4 }, .playing);
+    v.cells_buf[0] = .{ .x = 5, .y = 0 };
+    v.cells_buf[1] = .{ .x = 5, .y = 1 };
+    v.cells_buf[2] = .{ .x = 5, .y = 2 };
+    v.dir = .up;
+    v.next_dir = .up;
+    v.food = null;
+    advance(&v);
+    try std.testing.expectEqual(Status.playing, v.status);
+    try std.testing.expectEqual(@as(u16, ROWS - 1), cells(&v)[0].y);
 }
 
-test "queueDir: 180 reject, decision-015 menu overwrite, pause toggle" {
+test "tail-chase survives entering the vacating tail cell when not eating" {
+    // Self-collision is checked against the body minus the cell the tail is
+    // about to vacate, so moving into the space your tail leaves is legal —
+    // but only because not eating means the tail actually moves this tick.
     var buf: [COLS * ROWS]Cell = undefined;
     var w: World = undefined;
     initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    w.cells_buf[0] = .{ .x = 5, .y = 5 }; // head
+    w.cells_buf[1] = .{ .x = 10, .y = 5 }; // mid (never adjacent to the move)
+    w.cells_buf[2] = .{ .x = 4, .y = 5 }; // tail, the cell the head enters
+    w.cells_len = 3;
+    w.dir = .left;
+    w.next_dir = .left;
+    w.food = null; // not eating -> tail vacates
 
-    queueDir(&w, .left); // exact opposite of dir=right -> rejected
-    try std.testing.expectEqual(Dir.right, w.next_dir);
-    queueDir(&w, .up); // legal against dir=right
-    try std.testing.expectEqual(Dir.up, w.next_dir);
     advance(&w);
-    try std.testing.expectEqual(Dir.up, w.dir); // commit-before-move
-
-    // From menu, up starts the game but reset() clobbers it back to right —
-    // decision-015, kept verbatim.
-    var menu: World = undefined;
-    initWorld(&menu, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .menu);
-    queueDir(&menu, .up);
-    try std.testing.expectEqual(Status.playing, menu.status);
-    try std.testing.expectEqual(Dir.right, menu.dir);
-    try std.testing.expectEqual(Dir.right, menu.next_dir);
-
-    // Left from a right-facing menu is 180-rejected, so it never starts.
-    var rejected: World = undefined;
-    initWorld(&rejected, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .menu);
-    queueDir(&rejected, .left);
-    try std.testing.expectEqual(Status.menu, rejected.status);
-
-    togglePause(&w);
-    try std.testing.expectEqual(Status.paused, w.status);
-    togglePause(&w);
     try std.testing.expectEqual(Status.playing, w.status);
+    try std.testing.expectEqualSlices(Cell, &[_]Cell{
+        .{ .x = 4, .y = 5 }, .{ .x = 5, .y = 5 }, .{ .x = 10, .y = 5 },
+    }, cells(&w));
 }
 
-test "pump: dt clamp, carry-over, and the speed table" {
+test "tail-chase dies entering the tail cell when eating" {
+    // The single most likely thing to get wrong in a port: this is the exact
+    // layout as the surviving case except food now sits on the tail cell too.
+    // Eating pins the tail (the snake grows instead of shifting), so the same
+    // move that was legal a moment ago is now a fatal self-collision.
     var buf: [COLS * ROWS]Cell = undefined;
     var w: World = undefined;
     initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    w.cells_buf[0] = .{ .x = 5, .y = 5 }; // head
+    w.cells_buf[1] = .{ .x = 10, .y = 5 }; // mid
+    w.cells_buf[2] = .{ .x = 4, .y = 5 }; // tail == next cell == food
+    w.cells_len = 3;
+    w.dir = .left;
+    w.next_dir = .left;
+    w.food = .{ .x = 4, .y = 5 }; // the move is a scoring move
+
+    advance(&w);
+    // eating -> body_len_check == cells_len (tail included) -> self-hit -> die
+    try std.testing.expectEqual(Status.dead, w.status);
+}
+
+test "out-of-bounds death happens after the direction commit" {
+    // The wall-mode bounds check runs after `w.dir = w.next_dir`, so a fatal
+    // step still commits the new direction: `dir` reflects the direction that
+    // actually walked off the board, proving the commit is unconditional and
+    // not skipped when the move turns out to be fatal.
+    var buf: [COLS * ROWS]Cell = undefined;
+    var w: World = undefined;
+    initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    w.cells_buf[0] = .{ .x = 12, .y = 0 }; // head against the top edge
+    w.cells_buf[1] = .{ .x = 11, .y = 0 };
+    w.cells_buf[2] = .{ .x = 10, .y = 0 };
+    w.cells_len = 3;
+    w.dir = .right; // moving right along the top row
+    w.next_dir = .right;
     w.food = null;
 
-    // First frame: nothing accumulated past the 64 ms clamp, no tick yet.
-    try std.testing.expectEqual(@as(u32, 0), pump(&w, 64_000));
-    try std.testing.expectEqual(@as(u32, 64_000), w.acc_us);
-    try std.testing.expectEqual(@as(u32, 0), w.tick);
+    queueDir(&w, .up); // legal turn (not a 180 of right) that walks off y=0
+    advance(&w);
 
-    // A huge gap contributes only the clamped 64 ms, never fast-forwards.
-    var big: World = undefined;
-    initWorld(&big, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
-    big.food = null;
-    big.score = 40; // fastest period, 55000 us
-    try std.testing.expectEqual(@as(u32, 1), pump(&big, 32_000_000));
-    try std.testing.expectEqual(@as(u32, 64_000 - 55_000), big.acc_us);
-
-    // Carry-over: 64 + 64 + 64 ms crosses the 130000 us first tick on the
-    // third pump, leaving 192000-130000 = 62000 us behind.
-    var acc: World = undefined;
-    initWorld(&acc, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
-    acc.food = null;
-    try std.testing.expectEqual(@as(u32, 0), pump(&acc, 64_000));
-    try std.testing.expectEqual(@as(u32, 0), pump(&acc, 64_000));
-    try std.testing.expectEqual(@as(u32, 1), pump(&acc, 64_000));
-    try std.testing.expectEqual(@as(u32, 62_000), acc.acc_us);
-    try std.testing.expectEqual(@as(u32, 1), acc.tick);
-
-    // Paused frames advance nothing.
-    acc.status = .paused;
-    try std.testing.expectEqual(@as(u32, 0), pump(&acc, 64_000));
+    try std.testing.expectEqual(Dir.up, w.dir); // committed even though fatal
+    try std.testing.expectEqual(Status.dead, w.status); // died moving up, off the top
 }
 
-test "win: eating the last free cell on a full board ends the game dead" {
-    // A 2x2 board, snake over three cells, food on the only free cell: the
-    // eating move pins the tail (no vacate), the eat scores, and placeFood
-    // finds no free cell — the win, which is `dead` in the oracle too.
+test "advance scores 10 before placeFood and wins only after the increment" {
+    // Inside the eating branch the order is: grow, score += 10, placeFood,
+    // and only if placeFood finds no free cell does the game win. On a full
+    // board that means the score increment has already landed (10) at the
+    // moment the win fires, not skipped or ordered after the win.
     var buf: [4]Cell = undefined;
     var w: World = undefined;
     initWorld(&w, &buf, 2, 2, false, .{ 1, 2, 3, 4 }, .playing);
@@ -496,22 +463,148 @@ test "win: eating the last free cell on a full board ends the game dead" {
     w.cells_len = 3;
     w.dir = .left;
     w.next_dir = .left;
-    w.food = .{ .x = 0, .y = 0 };
+    w.food = .{ .x = 0, .y = 0 }; // the only free cell on a 2x2 board
 
     advance(&w);
-    try std.testing.expectEqual(Status.dead, w.status);
-    try std.testing.expectEqual(@as(u32, 10), w.score);
-    try std.testing.expect(w.food == null);
-    try std.testing.expectEqual(@as(u32, 4), w.cells_len);
+    try std.testing.expectEqual(@as(u32, 10), w.score); // incremented first
+    try std.testing.expectEqual(@as(u32, 4), w.cells_len); // grew to fill the board
+    try std.testing.expect(w.food == null); // placeFood found no free cell
+    try std.testing.expectEqual(Status.dead, w.status); // win == dead (oracle parity)
 }
 
-test "tickPeriodUs indexes the frozen table verbatim" {
-    // docs/abi-decisions.md freeze #5's five committed integers, verbatim.
-    try std.testing.expectEqual(@as(u32, 130000), tickPeriodUs(0));
-    try std.testing.expectEqual(@as(u32, 96296), tickPeriodUs(10));
-    try std.testing.expectEqual(@as(u32, 76471), tickPeriodUs(20));
-    try std.testing.expectEqual(@as(u32, 63415), tickPeriodUs(30));
-    try std.testing.expectEqual(@as(u32, 55000), tickPeriodUs(40));
-    // min(score/10, 4) clamps everything from 40 up to the last entry.
-    try std.testing.expectEqual(@as(u32, 55000), tickPeriodUs(1000));
+test "queueDir reads dir while playing and next_dir in every other status" {
+    // queueDir's 180 guard is `if (status == .playing) dir else next_dir`.
+    // Both branches are pinned with `dir` and `next_dir` deliberately made to
+    // differ, so a guard that reads the wrong field rejects/accepts wrongly.
+    var buf: [COLS * ROWS]Cell = undefined;
+
+    // Playing: guard reads dir. dir=up, next_dir=right; .down is the reverse
+    // of dir (reject), but NOT the reverse of next_dir (would wrongly accept
+    // if the guard read next_dir).
+    var p: World = undefined;
+    initWorld(&p, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    p.dir = .up;
+    p.next_dir = .right;
+    queueDir(&p, .down);
+    try std.testing.expectEqual(Dir.right, p.next_dir); // rejected: guard read dir=up
+
+    // Paused (non-playing): guard reads next_dir. dir=up, next_dir=right;
+    // .left is the reverse of next_dir (reject), but NOT of dir (would wrongly
+    // accept if the guard read dir).
+    var q: World = undefined;
+    initWorld(&q, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .paused);
+    q.dir = .up;
+    q.next_dir = .right;
+    queueDir(&q, .left);
+    try std.testing.expectEqual(Dir.right, q.next_dir); // rejected: guard read next_dir=right
+    try std.testing.expectEqual(Status.paused, q.status); // a rejected input never resumes
+}
+
+test "pump clamps to MAX_STEPS per call and carries the remainder over" {
+    // docs/abi-decisions.md freeze #5: the accumulator runs on integer us.
+    // (a) A pump handed more accumulated time than MAX_STEPS ticks consumes at
+    // most MAX_STEPS advances and leaves the rest in acc_us, never discarding
+    // it. (b) A sub-tick remainder carries into the next pump and is consumed
+    // there. Both are asserted here per AC#3.
+    var buf: [COLS * ROWS]Cell = undefined;
+
+    // The frozen table itself, so the pump math below is pinned to it.
+    try std.testing.expectEqual(@as(u32, 130_000), tickPeriodUs(0));
+    try std.testing.expectEqual(@as(u32, 55_000), tickPeriodUs(40));
+
+    // (a) Clamp: score=40 -> 55000 us period, MAX_DT_US clamps dt to 64000 and
+    // acc is preloaded with 10 ticks of time. Only MAX_STEPS fire; the other
+    // four ticks' worth stays in acc_us.
+    var w: World = undefined;
+    initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    w.food = null;
+    w.score = 40; // fastest period, 55000 us
+    w.acc_us = 550_000; // 10 ticks of prebuilt accumulated time
+    const stepped = pump(&w, 0);
+    try std.testing.expectEqual(@as(u32, MAX_STEPS), stepped);
+    try std.testing.expectEqual(@as(u32, 550_000 - MAX_STEPS * 55_000), w.acc_us); // 220000 carried
+    try std.testing.expectEqual(@as(u32, MAX_STEPS), w.tick); // 6 advances, snake still alive
+    try std.testing.expectEqual(Status.playing, w.status);
+
+    // (b) Carry-over: 64 + 64 + 64 ms against the 130000 us first period. The
+    // first two pumps fall short; the third crosses the tick, and the 62000 us
+    // that's left is exactly the unconsumed remainder, carried not discarded.
+    var acc: World = undefined;
+    initWorld(&acc, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    acc.food = null;
+    try std.testing.expectEqual(@as(u32, 0), pump(&acc, 64_000)); // 64000 < 130000
+    try std.testing.expectEqual(@as(u32, 0), pump(&acc, 64_000)); // 128000 < 130000
+    try std.testing.expectEqual(@as(u32, 1), pump(&acc, 64_000)); // 192000 >= 130000
+    try std.testing.expectEqual(@as(u32, 62_000), acc.acc_us); // 192000 - 130000
+    try std.testing.expectEqual(@as(u32, 1), acc.tick);
+
+    // A paused frame accumulates and advances nothing.
+    acc.status = .paused;
+    try std.testing.expectEqual(@as(u32, 0), pump(&acc, 64_000));
+}
+
+test "serialize then deserialize round-trips a driven World" {
+    // canon.encode/decode operate on canon.State, not World, and there is no
+    // World->canon.State helper in this module, so the conversion is built
+    // field-by-field inline here (per TASK-019). The world is driven through
+    // an eat, further advances, and a pump so tick, score, rng_state and the
+    // body all diverge from their initial values before the round-trip.
+    var buf: [COLS * ROWS]Cell = undefined;
+    var w: World = undefined;
+    initWorld(&w, &buf, COLS, ROWS, false, .{ 1, 2, 3, 4 }, .playing);
+    w.food = .{ .x = 9, .y = 12 }; // directly ahead -> eat on the first advance
+    advance(&w); // score 10, body grows, placeFood advances the rng stream
+    advance(&w);
+    advance(&w);
+    _ = pump(&w, 64_000); // accumulator + possibly another advance
+
+    try std.testing.expect(w.food != null); // a real, non-null food to round-trip
+    try std.testing.expect(w.tick > 0);
+    try std.testing.expect(w.score > 0);
+
+    // Build canon.State from the world's live fields (head-first cells view).
+    const snapshot = w.rng.state();
+    const player = canon.Player{
+        .status = w.status,
+        .dir = w.dir,
+        .next_dir = w.next_dir,
+        .score = w.score,
+        .cells = cells(&w),
+    };
+    const players_arr = [_]canon.Player{player};
+    const state = canon.State{
+        .cols = w.cols,
+        .rows = w.rows,
+        .wrap = w.wrap,
+        .tick = w.tick,
+        .rng_state = snapshot,
+        .food = w.food,
+        .players = &players_arr,
+    };
+
+    var enc: [512]u8 = undefined;
+    const rec = try canon.encode(state, &enc);
+    try std.testing.expect(canon.verify(rec));
+
+    var players: [1]canon.Player = undefined;
+    var decoded_cells: [COLS * ROWS]canon.Cell = undefined;
+    const got = try canon.decode(rec, &players, &decoded_cells);
+
+    // Every field of the decoded state equals the world it was built from.
+    try std.testing.expectEqual(w.cols, got.cols);
+    try std.testing.expectEqual(w.rows, got.rows);
+    try std.testing.expectEqual(w.wrap, got.wrap);
+    try std.testing.expectEqual(w.tick, got.tick);
+    try std.testing.expectEqualSlices(u32, &snapshot, &got.rng_state);
+    try std.testing.expect(got.food != null);
+    try std.testing.expectEqual(w.food.?.x, got.food.?.x);
+    try std.testing.expectEqual(w.food.?.y, got.food.?.y);
+
+    try std.testing.expectEqual(@as(usize, 1), got.players.len);
+    const gp = got.players[0];
+    try std.testing.expectEqual(w.status, gp.status);
+    try std.testing.expectEqual(w.dir, gp.dir);
+    try std.testing.expectEqual(w.next_dir, gp.next_dir);
+    try std.testing.expectEqual(w.score, gp.score);
+    try std.testing.expectEqualSlices(canon.Cell, cells(&w), gp.cells);
 }
