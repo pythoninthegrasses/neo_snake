@@ -563,12 +563,54 @@ covers Android backgrounding, which has no `blur`-equivalent guarantee the way d
 A `_focused` flag ensures `focus_lost` emits at most once per genuine focus transition (AC#2), even
 when both `_OUT` constants fire for the same underlying event; the `_IN` notifications exist solely to
 reset that flag for the next transition. There is no focus-regained signal — mirroring the oracle
-exactly, since `snake.html` has no resume-on-focus behavior to port, only pause-on-blur. No scene wires
-`focus_lost` up yet, the same "no consumer until a later screens/app-wiring task" posture as
-`input_router.gd` and `tick_driver.gd`.
+exactly, since `snake.html` has no resume-on-focus behavior to port, only pause-on-blur.
+`game_screen.gd` (TASK-036) is `focus_lost`'s first consumer, pausing the run app-side the same way
+`snake.html:620`'s `blur` handler does.
 
 `game/tests/test_app_lifecycle.gd` calls `_notification()` directly with Godot's own constants (AC#3) —
 the same values the engine delivers to a live node — to verify the dedup logic on desktop without a
 real window-manager focus change. Android/web coverage isn't automatable (no harness can simulate OS-
 level backgrounding), consistent with decision-012's own note that correctness there relies on
 manual/platform testing rather than an automated test.
+
+## `game/presentation/screens/{game_screen_state,hud,overlay_panel,game_screen}.gd` (TASK-036)
+
+`game_screen_state.gd` (`GameScreenState`, pure `RefCounted`) ports `showOverlay()`'s per-status
+content (menu's static markup at `snake.html:227-241`, `togglePause()`'s call at `snake.html:562`,
+`die()`'s and `win()`'s at `snake.html:402`/`407`) with no `Node`/`SimulationWorld` dependency, so
+`game/tests/test_game_screen_state.gd` exercises every transition without a live scene.
+`screen_for(sim_status, app_paused)` derives one of `SCREEN_MENU`/`SCREEN_PLAYING`/`SCREEN_PAUSED`/
+`SCREEN_DEAD` — `app_paused` is layered in because the live world's own status never reaches
+`NS_STATUS_PAUSED` (see below). `overlay_content()` returns plain-text title/sub/button strings (no
+`<br>`/`<b>`), matching the task's own instruction to use real Control nodes instead of
+`showOverlay()`'s `innerHTML`.
+
+`hud.gd` (`Hud extends Control`) and `overlay_panel.gd` (`OverlayPanel extends Control`) are built
+entirely in code in `_ready()`, following `board_view.gd`'s only precedent for a hand-authored node
+tree (no `.tscn` exists anywhere in this repo). `OverlayPanel` is a single reused Control
+reconfigured per screen via `configure()`, mirroring the oracle's single `#overlay` div that
+`showOverlay()`/`hideOverlay()` reconfigure and toggle rather than swap. Per [[decision-024]], its
+mode `<select>`-equivalent (`OptionButton`) is shown only for `SCREEN_MENU`, even though the
+oracle's own `<select>` is structurally visible for every overlay state.
+
+`game_screen.gd` (`GameScreen extends Control`) is the top-level orchestrator: it loads content via
+`ContentLoader`, save data via `SaveStore`, generates a fresh RNG seed via `seed_source.gd`'s
+`SeedSource.fresh()` (the only `randi()` caller outside `game/simulation/`'s own boundary-gate
+exemption a live app needs), and wires `SimulationWorld`, `TickDriver`, `BoardView`, `Hud`,
+`OverlayPanel`, `InputRouter`, and `AppLifecycle` together. `_process()` snapshots the food cell via
+`serialize()`/`decode_canon_header()` immediately before each frame's `TickDriver.advance_frame()`
+call (so a drained `NS_EVENT_EAT` has a coordinate to hand `BoardView.notify_eat()`), then drains
+events and reacts per kind — `NS_EVENT_DIE` sets `board_view.fx.flash = 1.0` directly (no `FxState`
+method covers `die()`'s explicit `S.flash=1`, since a win always co-occurs with an eat and so
+already gets its flash from `FxState.burst()`), and `NS_EVENT_WIN` marks the following dead screen
+as a win rather than a game over.
+
+Pause is entirely app-level: no export function ever drives a live world's status to
+`NS_STATUS_PAUSED`, so `GameScreen` tracks its own `_paused: bool` and passes `gate=not _paused` to
+`TickDriver.advance_frame` (`running` is always `true` — this app has no separate engine-pause
+concept). Per [[decision-024]], `board_view.gd`'s `_draw_pause_vignette()` branch stays dead code
+until/unless a later task drives a real paused world status through.
+
+`game/tests/test_game_screen.gd` instantiates a real `GameScreen`, following
+`test_app_lifecycle.gd`'s `add_child()`-then-call convention, with `save_dir_override` redirecting
+`SaveStore` off real `user://` data the same way `test_save_store.gd` isolates its own temp dir.
