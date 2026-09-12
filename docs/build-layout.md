@@ -406,3 +406,35 @@ reports a specific, file-and-field-qualified error string instead of a generic f
 `game/tests/test_content_loader.gd` exercises each of these against temp files under `user://`.
 `loader.gd` never references `NeoSnakeWorld`, a sim-verb name, or global RNG, so it passes
 `game:boundary-check` (TASK-029) the same as any other non-simulation script.
+
+## `game/simulation/tick_driver.gd` (TASK-031)
+
+`TickDriver.advance_frame(world, raw_frame_ms, running, gate)` is the only place a per-frame `dt`
+crosses from Godot's render loop into `SimulationWorld.pump()` (`ns_pump`, `core/world.zig`'s own
+accumulator). It is deliberately a plain `RefCounted`, not a `Node`: not `_physics_process` (a
+variable step re-read after every tick, an engine-owned catch-up cap, and it would force the sim
+onto the scene tree for no reason), and not a `Timer` (fires on a fixed interval with no
+accumulator, so it discards whatever time is left over instead of carrying it — a long hitch would
+silently lose ticks the oracle's own `S.acc` accumulator would still run).
+
+`advance_frame` never reads a clock (no `OS.get_ticks_usec`/`Time.*`) and never inspects `world`
+state itself — `raw_frame_ms`, `running`, and `gate` are all caller-supplied, so the function is
+pure forwarding onto `SimulationWorld.pump`, with no catch-up or clamping logic of its own layered
+on top (that all already lives in `ns_pump`). `running` and `gate` are two independent
+caller-supplied preconditions rather than one combined flag: `running` stands for whether the
+app/scene tree is currently processing frames at all (false while engine-paused, e.g. a modal
+settings/quit overlay a future task adds), and `gate` for whether the game's own state currently
+permits ticking (e.g. world status is playing). Either being false discards that frame's `dt`
+outright rather than banking it for a later call — matching `ns_pump`'s own "not playing" no-op
+instead of quietly accumulating backlog time behind the caller's back. This has no analogue in
+`reference/snake.html`: the oracle's own `frame()` loop reads `performance.now()` and the DOM's
+`blur` event directly, since it has no ABI boundary to keep pure across.
+
+`game/tests/test_tick_driver.gd` feeds a synthetic per-frame sequence — including a 200ms hitch well
+past `ns_pump`'s 64ms `MAX_DT_US` clamp, and two frames gated closed — against a fresh world (score
+0, so `TICK_PERIOD_US[0]` = 130000us) and asserts the exact resulting tick count at every step. The
+numbers are chosen to cross-check directly against `core/world.zig`'s own `"pump clamps to
+MAX_STEPS per call and carries the remainder over"` test, so the hitch's clamped-to-64000us
+contribution and the 62000us carried remainder both match an already-verified worked example rather
+than a number invented for this test alone. A separate test statically greps the source for clock
+reads, operationalizing AC#1 rather than leaving it to code review alone.
