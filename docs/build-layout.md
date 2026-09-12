@@ -478,3 +478,38 @@ and no single-call filled-rounded-rect primitive; per
 `board_view.gd` fills with flat colors (same shape/color/layer order, no glow) via `StyleBoxFlat` +
 `draw_style_box` for rounded rects, judged disproportionate scope for a data-driven renderer and not
 required by any of this task's Acceptance Criteria.
+
+## `game/platform/{input_router,input_defaults,swipe_gesture,analog_latch}.gd` (TASK-033)
+
+Four paths converge on `InputRouter._unhandled_input` (`_unhandled_input`, not `_input`, so a focused
+UI control gets first refusal of the event — AC#2), mirroring the oracle's single-choke-point
+`queueDir` (`snake.html:569-576`, `docs/architecture.md`'s "Input" section): keyboard actions, touch
+swipe, and analog stick motion. `InputRouter` emits `direction_queued`/`pause_requested`/
+`restart_requested` signals rather than calling `SimulationWorld` itself — the "no instant 180"
+reversal-legality check already lives in `core/world.zig`'s `queue_dir`, so this stays a pure
+translation layer with no game-state knowledge of its own, the same thin-forwarding role
+`game/simulation/tick_driver.gd` plays for the tick loop. No scene wires it up yet, matching every
+other platform/presentation script landed so far.
+
+`InputDefaults` is the single source of truth for action names and their expected physical keycodes
+(mirroring the oracle's `KEY` table, `snake.html:578-582`: arrows and WASD both map to the same four
+directions, Space pauses/starts, R restarts). `project.godot`'s `[input]` section declares the actual
+`InputMap` (AC#1 — bindings live in a diffable config file, not runtime code), and
+`game/tests/test_input_defaults.gd` asserts the loaded `InputMap` matches `InputDefaults` exactly in
+both directions, so the two can't silently drift apart.
+
+`SwipeGesture` is a pure `RefCounted` port of the oracle's `touchstart`/`touchmove`/`touchend`
+handling (`snake.html:603-618`) with no `Node` dependency (AC#4) — same "pure static/no viewport"
+posture as `BoardGeometry`. The oracle's fixed `24` CSS-pixel drag threshold becomes board-scaled per
+[[decision-011]] (`backlog/decisions/decision-011 - Board-scaled-swipe-threshold.md`): `cell_px *`
+`content/tuning.json`'s already-wired `input.swipe_threshold_cell_fraction` (`0.5`), floored at the
+oracle's original `24` so the gesture never reads as more sensitive than the oracle on a low-density
+screen. This reuses the cell-fraction field decision-011 already established rather than introducing
+a second, board-pixel-relative formula.
+
+`AnalogLatch` implements a 0.55-fire/0.35-release hysteresis per stick axis (AC#3): once an axis
+latches past `0.55`, it must fall back under `0.35` before a fresh push past `0.55` can fire again, so
+jitter sitting anywhere between the two thresholds can never double-fire. `reference/snake.html` has
+no gamepad support at all — this is a wholly new capability, not a port of existing oracle behavior,
+so per DoD#2 there is nothing to record as a *deviation*; the one genuine oracle-behavior deviation
+this task introduces (the swipe threshold) is already covered by decision-011 above.
