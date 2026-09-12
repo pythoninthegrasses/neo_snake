@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { advance, initialState, queueDir, rngState } from './sim.mjs';
+import { advance, dirName, initialState, queueDir, rngState } from './sim.mjs';
 import { encode, verify } from './canon.mjs';
 import {
   CORPUS_VERSION, generate, parseCommandLog, renderTrace,
@@ -208,7 +208,7 @@ const manifestFiles = () => JSON.parse(read(MANIFEST)).files;
       const bytes = encode({
         cols: S.cols, rows: S.rows, wrap: S.wrap, tick: S.tick, rngState: rngState(S),
         food: S.food,
-        players: [{ status: S.status, dir: S.dir, nextDir: S.nextDir, score: S.score, cells: S.snake }],
+        players: [{ status: S.status, dir: dirName(S.dir), nextDir: dirName(S.nextDir), score: S.score, cells: S.snake }],
       });
       if (checksum(bytes) !== tick.c) mismatches.push(`${entry.name} t${tick.t}: checksum`);
       if (JSON.stringify(applied) !== JSON.stringify(tick.in)) mismatches.push(`${entry.name} t${tick.t}: inputs`);

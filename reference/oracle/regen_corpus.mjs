@@ -31,7 +31,7 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { initialState, advance, queueDir, rngState } from './sim.mjs';
+import { initialState, advance, queueDir, rngState, dirName } from './sim.mjs';
 import { encode } from './canon.mjs';
 
 // The one u64 the corpus needs: the canonical checksum trailer read as a
@@ -202,12 +202,16 @@ function traceLine(S, record, showState) {
   return line;
 }
 
-/** sim.mjs's single-snake state in the shape canon.mjs's encode() expects. */
+/**
+ * sim.mjs's single-snake state in the shape canon.mjs's encode() expects.
+ * `S.dir`/`S.nextDir` are DIRS vectors (`{x,y}`), not the name encode() wants
+ * (docs/canonical-state.md) — dirName() translates them.
+ */
 const canonical = (S) => ({
   cols: S.cols, rows: S.rows, wrap: S.wrap, tick: S.tick, rngState: rngState(S),
   food: S.food,
   players: [{
-    status: S.status, dir: S.dir, nextDir: S.nextDir, score: S.score, cells: S.snake,
+    status: S.status, dir: dirName(S.dir), nextDir: dirName(S.nextDir), score: S.score, cells: S.snake,
   }],
 });
 

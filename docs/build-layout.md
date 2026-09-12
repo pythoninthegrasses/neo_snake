@@ -19,12 +19,13 @@ siblings, neither absorbing the other.
 One `.zig` file per concern, matching the docs each implements: `core/rng.zig` (`docs/rng.md`),
 `core/canon.zig` (`docs/canonical-state.md`), `core/world.zig` (the simulation mirroring
 `reference/oracle/sim.mjs` — the accumulator side of `docs/architecture.md`'s fixed-timestep loop,
-with the integer tick-period table of `docs/abi-decisions.md` freeze #5). `core/corpus.zig` (already committed, TASK-014) is
-generated data, not part of the library's build graph — `build.zig` does not need to reference it.
-Each new Zig source this phase adds is exposed as its own root module in `build.zig` so
-`zig build test` can run its Tier-A tests independently; there is no single top-level `lib.zig`
-aggregator yet — add one only when a later task (e.g. TASK-024's `core/abi.zig`) actually needs to
-import more than one of these together.
+with the integer tick-period table of `docs/abi-decisions.md` freeze #5). `core/corpus.zig` (already
+committed, TASK-014) is generated data — the list of committed `game/tests/corpus/*.jsonl` trace
+paths — consumed by `core/difftest.zig` (TASK-020) to enumerate which files to replay; it is not
+part of the `test` step's build graph. Each new Zig source this phase adds is exposed as its own
+root module in `build.zig` so `zig build test` can run its Tier-A tests independently; there is no
+single top-level `lib.zig` aggregator yet — add one only when a later task (e.g. TASK-024's
+`core/abi.zig`) actually needs to import more than one of these together.
 
 ## `zig build test`
 
@@ -33,13 +34,30 @@ all registered under the same `test` step name so `zig build test` runs all of t
 invocation. `ZIG_GLOBAL_CACHE_DIR` is already set repo-wide in the root `taskfile.yml`
 (`{{.ROOT_DIR}}/.cache/zig`) — `core/build.zig` does not need its own cache-dir handling.
 
+## `zig build difftest`
+
+`build.zig` also defines a standalone `difftest` executable (`core/difftest.zig`), built from its
+own module (importing `rng`, `canon`, `world`, and `corpus` — the same module objects the `test`
+step already builds, reused rather than duplicated for Zig's per-module type identity) and wired to
+a named `difftest` step (`b.step("difftest", ...)`), separate from `test` per the
+`~/git/zelda3/build.zig` step-naming precedent. It replays every trace `core/corpus.zig` lists
+against a fresh `core/world.zig` simulation, asserting each tick's checksum and each `docs/canonical-state.md`
+full-state anchor. Hermetic: it reads only the committed `game/tests/corpus/*.jsonl` files via
+`std.Io.Dir`, never shells out, and needs no `node` binary on `PATH`. On a mismatch it decodes the
+already-computed failing tick's bytes and diffs them field-by-field against the last anchor at or
+before it (anchors occur every 64 ticks) — it does not re-simulate from the anchor, since replaying
+the same `world.zig` code from the same start can only reproduce the bytes already computed in the
+single forward pass; the anchor is the only independent ground truth available between checksums.
+
 ## `task check` wiring
 
-New `taskfiles/core.yml`, included in the root `taskfile.yml` as `core:`, with a `test` task:
-`dir: core`, `cmds: [zig build test]`. Wired into the top-level `check` task immediately after
-`oracle:verify` and before `game:import` — `core:test` is fast and pure-Zig (no Godot/GDExtension
-involved yet), so it fails before the slower Godot steps, the same ordering rationale already
-applied to `oracle:verify` (`docs/corpus-format.md`).
+New `taskfiles/core.yml`, included in the root `taskfile.yml` as `core:`, with `test` and
+`difftest` tasks (`dir: core`, `cmds: [zig build test]` / `[zig build difftest]`). Wired into the
+top-level `check` task immediately after `oracle:verify` and before `game:import` — `core:test` and
+`core:difftest` are fast and pure-Zig (no Godot/GDExtension involved yet), so they fail before the
+slower Godot steps, the same ordering rationale already applied to `oracle:verify`
+(`docs/corpus-format.md`). `core:difftest` runs after `core:test` since it exercises the same
+`world.zig` the Tier-A suite already validated in isolation.
 
 ## No allocator, no libc
 
