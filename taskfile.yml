@@ -56,6 +56,7 @@ tasks:
       - task: oracle:verify
       - task: core:test
       - task: core:abi-header-check
+      - task: core:abi-symbols
       - task: core:difftest
       - task: game:import
       - task: game:test
