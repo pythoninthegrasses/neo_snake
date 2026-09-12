@@ -362,3 +362,47 @@ Wired in as `game:boundary-check` (`taskfiles/game.yml`), placed in the top-leve
 immediately after `extension:build` and before `game:import` — the same "cheap static check before
 a slower Godot step" ordering already used for `core:abitest-purity`, and it needs `extension:build`
 to have just run so the orphaned-binary check has a real artifact to check against.
+
+## `game/content/{tuning,palette,modes}.json` + `game/content/loader.gd` (TASK-030)
+
+Per [[decision-010]] (`backlog/decisions/decision-010 - Tuning-constants-moved-to-content-tuning.json.md`),
+every gameplay-feel/presentation constant `reference/snake.html` hardcodes in its IIFE — particle
+counts/drag/lifetime, flash decay and alpha factors, food-pulse timing, render geometry fractions
+(corner radii, eye offsets, shadow-blur factors), the swipe-recognition threshold, and per-mode best
+scores — moves into three versioned JSON files instead of GDScript source, so tuning changes are
+reviewable without touching code. This is deliberately **not** the same as the frozen ABI constants
+in `core/world.zig` (`COLS`/`ROWS`/`BASE_MS`/`MIN_MS`/`TICK_PERIOD_US`): those are pinned by
+[abi-decisions.md](abi-decisions.md) freeze #5 and must never live in a designer-editable file, so
+none of them appear in `game/content/`.
+
+Two fields specifically satisfy TASK-030 AC#3's traceability requirement:
+
+- `tuning.json`'s `input.swipe_threshold_cell_fraction` replaces the oracle's fixed `24`-CSS-pixel
+  swipe threshold (`reference/snake.html:613`) with a fraction of the board's current cell size, per
+  [[decision-011]] (`backlog/decisions/decision-011 - Board-scaled-swipe-threshold.md`) — the same
+  swipe reads as "about half a cell" on a phone or a tablet instead of "exactly 24 device pixels."
+- `tuning.json`'s `scoring.best_score_defaults` (one entry per mode id declared in `modes.json`)
+  is the seed data for [[decision-009]]'s per-mode persisted best score
+  (`backlog/decisions/decision-009 - Per-mode-best-score-and-persisted-mode.md`) — the oracle
+  persists exactly one `localStorage["snake.best"]` shared across modes; the Godot port persists one
+  best score per mode instead, and this is where each mode's zero-valued starting point lives before
+  any save file exists.
+
+`game/content/palette.json` carries only colors (the `:root` CSS custom properties plus the
+canvas-only hex/RGB values `render()` uses that never had a CSS variable — checkerboard tile,
+food/snake/eye/particle/flash colors); `game/content/tuning.json` carries every other magic number.
+`game/content/modes.json` carries the mode list itself (`wall`/`wrap`, matching the oracle's
+`<select id="mode">` options) plus which mode is the bootstrap default.
+
+`game/content/loader.gd` (`class_name ContentLoader`) loads and schema-validates each file:
+`load_tuning()` / `load_palette()` / `load_modes()` each return `{ok, error, data}`; `load_all()`
+additionally cross-checks that `tuning.json`'s `scoring.best_score_defaults` has exactly one entry
+per mode id in `modes.json` — neither a stale id nor a missing one. Validation walks a small schema
+dictionary (nested dict → recurse, `"number"` → accept `TYPE_INT`/`TYPE_FLOAT` since
+`JSON.parse_string` always decodes numbers as `TYPE_FLOAT`, `["array_of", <schema>]` → every array
+element must match, otherwise an exact `typeof()` match) rather than hand-writing one `if` per
+field, so every malformed-input case (parse error, missing key, wrong type, mismatched mode ids)
+reports a specific, file-and-field-qualified error string instead of a generic failure —
+`game/tests/test_content_loader.gd` exercises each of these against temp files under `user://`.
+`loader.gd` never references `NeoSnakeWorld`, a sim-verb name, or global RNG, so it passes
+`game:boundary-check` (TASK-029) the same as any other non-simulation script.

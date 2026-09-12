@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "default_mode": "wall",
+  "modes": [
+    {
+      "id": "wall",
+      "label": "Walls (classic)",
+      "wrap": false
+    },
+    {
+      "id": "wrap",
+      "label": "Wrap-around",
+      "wrap": true
+    }
+  ]
+}

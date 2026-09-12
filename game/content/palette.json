@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "ui": {
+    "bg": "#0f172a",
+    "panel": "#111c33",
+    "grid_a": "#16233f",
+    "grid_b": "#13203a",
+    "snake": "#4ade80",
+    "snake_head": "#a7f3d0",
+    "food": "#f87171",
+    "text": "#e2e8f0",
+    "muted": "#7f8ea8",
+    "accent": "#38bdf8"
+  },
+  "board": {
+    "background": "#0c1628",
+    "checkerboard_tile": "#ffffff",
+    "grid_line": "#38bdf8",
+    "food_fill": "#ef4444",
+    "food_shadow": "#f87171",
+    "snake_head_fill": "#a7f3d0",
+    "snake_head_shadow": "#4ade80",
+    "snake_body_base_rgb": [74, 222, 128],
+    "snake_body_rgb_delta": [30, -20, 30],
+    "eye_fill": "#062c1a",
+    "particle_hues": ["#f87171", "#fbbf24"],
+    "flash_dead": "#ef4444",
+    "flash_eat": "#fbbf24",
+    "pause_vignette": "#060b16"
+  }
+}
