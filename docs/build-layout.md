@@ -94,6 +94,14 @@ slower Godot steps, the same ordering rationale already applied to `oracle:verif
 (`docs/corpus-format.md`). `core:difftest` runs after `core:test` since it exercises the same
 `world.zig` the Tier-A suite already validated in isolation.
 
+`core:abi-header-check` (TASK-023) runs between them: `zig cc -std=c11 -c core/abi_header_check.c
+-o /dev/null` against `include/neo_snake.h`, compiled to an object file only and never linked or
+run. It exists because `include/neo_snake.h` predates any implementation (`core/abi.zig` is
+TASK-024) — there is nothing yet to build a real test against — but the header still needs a check
+that every declared type/function is genuinely usable, not just syntactically present. Compiling
+without linking is what makes this possible: an unresolved `extern` reference is legal C right up
+until something tries to resolve it.
+
 ## No allocator, no libc
 
 Both constraints are properties of the **library code** (`core/rng.zig`, `core/canon.zig`,
