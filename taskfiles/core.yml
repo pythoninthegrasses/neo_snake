@@ -16,6 +16,21 @@ tasks:
     cmds:
       - zig build test
 
+  abi-header-check:
+    desc: "Compile-only smoke check that include/neo_snake.h is self-consistent and every declared symbol is usable"
+    summary: |
+      task core:abi-header-check
+
+      Compiles core/abi_header_check.c to an object file only (never
+      linked or run) against include/neo_snake.h — no implementation
+      exists yet (core/abi.zig is TASK-024), so this proves the header
+      itself is well-formed and that every declared type/function is
+      genuinely usable (e.g. ns_player_view_get at player_count == 1,
+      TASK-023 AC #1), not just that it parses.
+    dir: core
+    cmds:
+      - zig cc -std=c11 -Wall -Wextra -I../include -c abi_header_check.c -o /dev/null
+
   difftest:
     desc: "Replay the committed Tier-B JSONL corpus against core/world.zig and assert every checksum/anchor matches"
     summary: |
