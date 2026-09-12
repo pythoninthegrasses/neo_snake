@@ -79,4 +79,22 @@ pub fn build(b: *std.Build) void {
     const run_difftest = b.addRunArtifact(difftest_exe);
     const difftest_step = b.step("difftest", "Replay the committed JSONL corpus against core/world.zig");
     difftest_step.dependOn(&run_difftest.step);
+
+    // fuzzrun is oracle:fuzz's (TASK-022) live Zig half: unlike difftest, it
+    // takes a *fresh*, non-committed command-log path at runtime (built by
+    // reference/oracle/fuzz.mjs), so it's installed to a stable path
+    // (zig-out/bin/fuzzrun) rather than run here — fuzz.mjs invokes the
+    // binary directly once per generated seed. Deliberately not attached to
+    // the default "install" step; only `zig build fuzzrun` builds it.
+    const fuzzrun = b.createModule(.{
+        .root_source_file = b.path("fuzzrun.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    fuzzrun.addImport("canon", canon);
+    fuzzrun.addImport("world", world);
+    const fuzzrun_exe = b.addExecutable(.{ .name = "fuzzrun", .root_module = fuzzrun });
+    const install_fuzzrun = b.addInstallArtifact(fuzzrun_exe, .{});
+    const fuzzrun_step = b.step("fuzzrun", "Build the live fuzz-runner executable used by task oracle:fuzz");
+    fuzzrun_step.dependOn(&install_fuzzrun.step);
 }

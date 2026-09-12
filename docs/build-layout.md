@@ -20,7 +20,8 @@ One `.zig` file per concern, matching the docs each implements: `core/rng.zig` (
 `core/canon.zig` (`docs/canonical-state.md`), `core/world.zig` (the simulation mirroring
 `reference/oracle/sim.mjs` — the accumulator side of `docs/architecture.md`'s fixed-timestep loop,
 with the integer tick-period table of `docs/abi-decisions.md` freeze #5), `core/fuzz_seeds.zig`
-(TASK-021's Tier-B fuzz invariants over 256 committed seeds, see below). `core/corpus.zig` (already
+(TASK-021's Tier-B fuzz invariants over 256 committed seeds, see below), `core/fuzzrun.zig`
+(TASK-022's live fuzz-runner for `task oracle:fuzz`, see below). `core/corpus.zig` (already
 committed, TASK-014) is generated data — the list of committed `game/tests/corpus/*.jsonl` trace
 paths — consumed by `core/difftest.zig` (TASK-020) to enumerate which files to replay; it is not
 part of the `test` step's build graph. Each new Zig source this phase adds is exposed as its own
@@ -69,6 +70,19 @@ already-computed failing tick's bytes and diffs them field-by-field against the 
 before it (anchors occur every 64 ticks) — it does not re-simulate from the anchor, since replaying
 the same `world.zig` code from the same start can only reproduce the bytes already computed in the
 single forward pass; the anchor is the only independent ground truth available between checksums.
+
+## `zig build fuzzrun`
+
+`build.zig` also defines a `fuzzrun` executable (`core/fuzzrun.zig`, TASK-022), the live Zig half of
+`task oracle:fuzz`. Unlike `difftest`, it takes a command-log path (docs/corpus-format.md's *input*
+format) as a runtime argument rather than replaying `core/corpus.zig`'s committed list, because
+`oracle:fuzz` drives it with a freshly-generated, non-committed log each time
+(`reference/oracle/fuzz.mjs`) — there is nothing for `build.zig` to enumerate at graph-construction
+time. Its module reuses `canon` and `world` the same way `difftest`'s does, but its executable is
+only `b.addInstallArtifact`-attached to its own `fuzzrun` step (`b.step("fuzzrun", ...)`), not to the
+default `install` step, so a plain `zig build`/`zig build install` does not build it — only `zig
+build fuzzrun` (or `task oracle:fuzz`, which runs that first) does, leaving a stable
+`zig-out/bin/fuzzrun` for `fuzz.mjs` to invoke directly, once per generated seed.
 
 ## `task check` wiring
 
