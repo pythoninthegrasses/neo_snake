@@ -6,6 +6,16 @@ extends RefCounted
 ## forwards to exactly one NeoSnakeWorld method; no simulation logic is
 ## reimplemented here.
 
+## Re-exported NeoSnakeWorld result/enum constants, so callers outside this
+## file (e.g. game/tests/test_corpus_replay.gd) never need to reference
+## NeoSnakeWorld directly just to check a result code or build an input.
+const OK := NeoSnakeWorld.NS_OK
+const DIR_UP := NeoSnakeWorld.NS_DIR_UP
+const DIR_DOWN := NeoSnakeWorld.NS_DIR_DOWN
+const DIR_LEFT := NeoSnakeWorld.NS_DIR_LEFT
+const DIR_RIGHT := NeoSnakeWorld.NS_DIR_RIGHT
+const SPEED_SOURCE_SCORE_TABLE := NeoSnakeWorld.NS_SPEED_SOURCE_SCORE_TABLE
+
 var _world: NeoSnakeWorld = NeoSnakeWorld.new()
 
 func init(cols: int, rows: int, player_count: int, wrap: bool, rng_seed: PackedInt32Array, speed_source: int) -> int:

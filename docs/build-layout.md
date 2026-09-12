@@ -133,6 +133,35 @@ pre-trimmed one.
 anything besides `"std"` appears. Without it, Tier-C could silently degrade into a second copy of
 Tier-A by picking up a stray `@import("world")` or similar.
 
+## `game/tests/test_corpus_replay.gd` (Tier-D)
+
+TASK-028's Tier-D pass, a GDScript gdUnit4 suite driving the whole corpus through
+`SimulationWorld -> NeoSnakeWorld -> the C ABI -> core/world.zig` — the fourth independent
+computation of the same per-tick checksum (node oracle, Zig-internal Tier-B, Zig-via-C-ABI Tier-C,
+and now GDScript-via-GDExtension Tier-D). It mirrors Tier-C's own algorithm one layer up rather
+than inventing a new one: for each trace, `SimulationWorld.deserialize()` jumps straight to tick
+0's committed `"s"` anchor (every trace was recorded already `.playing`, decision-015), then every
+subsequent line's `"in"` array becomes a `step()` call, with the resulting `serialize()` output
+checked against that tick's `"c"` checksum and, where present, its `"s"` full-state anchor.
+
+Because `NeoSnakeWorld.checksum()` bit-reinterprets the ABI's `u64` into a (possibly negative)
+signed `int64` (`extension/src/neo_snake_world.cpp`), while a corpus trace's `"c"` field is a
+decimal string specifically because such values can exceed GDScript's safe integer range, the test
+file never compares the raw integers directly — `_u64_hi_lo()`/`_parse_decimal_hi_lo()` split both
+sides into 32-bit halves via well-defined bitwise ops and compare those, so nothing depends on how
+GDScript handles 64-bit overflow.
+
+One committed trace, `win-full-board.jsonl` (a deliberately tiny `cols=3` board), is excluded by
+name: `ns_world_init` unconditionally calls `reset()`, whose fixed snake placement needs `cols>8`,
+so the C ABI has no way to allocate a board that small in the first place — see
+`backlog/decisions/decision-021` for the full analysis. A second test asserts `NeoSnakeWorld.init()`
+still rejects that config, so an ABI change that ever lifts this restriction fails the guard loudly
+instead of leaving the exclusion stale.
+
+`game/tests/corpus/` (not `reference/oracle/corpus/`) is what Tier-D reads, specifically so it
+resolves via `res://tests/corpus/` (`docs/corpus-format.md`); no `taskfiles/game.yml` change was
+needed to wire this in; `game:test`'s `-a res://tests` already globs the whole directory.
+
 ## `task check` wiring
 
 New `taskfiles/core.yml`, included in the root `taskfile.yml` as `core:`, with `test` and
