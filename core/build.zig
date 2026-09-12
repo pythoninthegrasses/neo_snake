@@ -40,4 +40,27 @@ pub fn build(b: *std.Build) void {
     world.addImport("canon", canon);
     const world_test = b.addTest(.{ .root_module = world });
     test_step.dependOn(&b.addRunArtifact(world_test).step);
+
+    // difftest replays the committed JSONL corpus against world.zig
+    // (TASK-020) — a separate executable/step, not folded into `test`,
+    // since it needs an allocator and file I/O that rng/canon/world
+    // themselves must stay free of (see difftest.zig's header comment).
+    const corpus = b.createModule(.{
+        .root_source_file = b.path("corpus.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const difftest = b.createModule(.{
+        .root_source_file = b.path("difftest.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    difftest.addImport("rng", rng);
+    difftest.addImport("canon", canon);
+    difftest.addImport("world", world);
+    difftest.addImport("corpus", corpus);
+    const difftest_exe = b.addExecutable(.{ .name = "difftest", .root_module = difftest });
+    const run_difftest = b.addRunArtifact(difftest_exe);
+    const difftest_step = b.step("difftest", "Replay the committed JSONL corpus against core/world.zig");
+    difftest_step.dependOn(&run_difftest.step);
 }

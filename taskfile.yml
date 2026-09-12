@@ -55,5 +55,6 @@ tasks:
       - task: _guard-env-precedence
       - task: oracle:verify
       - task: core:test
+      - task: core:difftest
       - task: game:import
       - task: game:test

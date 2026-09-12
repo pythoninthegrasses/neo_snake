@@ -36,6 +36,18 @@ export const DIRS = {
   right: { x:  1, y:  0 },
 };
 
+/**
+ * The DIRS name for a vector S.dir/S.nextDir holds (`{x,y}`, not a string) —
+ * canon.mjs's encode() takes the name (docs/canonical-state.md's encoding),
+ * so any caller serializing sim.mjs state must go through this first.
+ */
+export function dirName(d) {
+  for (const [name, v] of Object.entries(DIRS)) {
+    if (v.x === d.x && v.y === d.y) return name;
+  }
+  throw new RangeError(`not a DIRS vector: ${JSON.stringify(d)}`);
+}
+
 // Oracle timing constants (docs/architecture.md "The two loops").
 export const BASE_MS = 130;      // tick at 1.0x
 export const MIN_MS  = 55;

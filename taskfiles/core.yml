@@ -15,3 +15,19 @@ tasks:
     dir: core
     cmds:
       - zig build test
+
+  difftest:
+    desc: "Replay the committed Tier-B JSONL corpus against core/world.zig and assert every checksum/anchor matches"
+    summary: |
+      task core:difftest
+
+      Runs `zig build difftest` inside core/, which builds core/difftest.zig
+      as a standalone executable (docs/build-layout.md) and replays every
+      trace in game/tests/corpus/ against core/world.zig, asserting each
+      tick's checksum and each full-state anchor. Hermetic: reads only the
+      committed corpus files, no node binary or network access required.
+      On a mismatch it rewinds to the last anchor and prints a field-by-field
+      diff of the first divergent tick.
+    dir: core
+    cmds:
+      - zig build difftest
