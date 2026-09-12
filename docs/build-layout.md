@@ -19,7 +19,8 @@ siblings, neither absorbing the other.
 One `.zig` file per concern, matching the docs each implements: `core/rng.zig` (`docs/rng.md`),
 `core/canon.zig` (`docs/canonical-state.md`), `core/world.zig` (the simulation mirroring
 `reference/oracle/sim.mjs` — the accumulator side of `docs/architecture.md`'s fixed-timestep loop,
-with the integer tick-period table of `docs/abi-decisions.md` freeze #5). `core/corpus.zig` (already
+with the integer tick-period table of `docs/abi-decisions.md` freeze #5), `core/fuzz_seeds.zig`
+(TASK-021's Tier-B fuzz invariants over 256 committed seeds, see below). `core/corpus.zig` (already
 committed, TASK-014) is generated data — the list of committed `game/tests/corpus/*.jsonl` trace
 paths — consumed by `core/difftest.zig` (TASK-020) to enumerate which files to replay; it is not
 part of the `test` step's build graph. Each new Zig source this phase adds is exposed as its own
@@ -33,6 +34,26 @@ single top-level `lib.zig` aggregator yet — add one only when a later task (e.
 all registered under the same `test` step name so `zig build test` runs all of them in one
 invocation. `ZIG_GLOBAL_CACHE_DIR` is already set repo-wide in the root `taskfile.yml`
 (`{{.ROOT_DIR}}/.cache/zig`) — `core/build.zig` does not need its own cache-dir handling.
+
+## Tier-B fuzz invariants (`core/fuzz_seeds.zig`)
+
+`core/fuzz_seeds.zig` (TASK-021) is a fourth module in the same `test` step, built and imported the
+same way `world.zig` is (`.addImport` of `rng`/`canon`/`world` into a fresh `b.createModule`, then
+`b.addTest`). Unlike `core/difftest.zig`, it checks 256 committed `[4]u32` seeds (a one-time
+splitmix64 codegen expansion, `docs/rng.md`'s "generated and independently re-derived, not
+hand-computed" convention for test vectors) against structural invariants — body length tracks
+score, no duplicate body cells, food never lands on a body cell, serialize∘deserialize is the
+identity, checksum survives a round trip — rather than a recorded oracle trace, since these are
+properties that must hold for any legal input sequence, not a fixed expected output. It stays
+pure-Zig (no allocator, no libc), so it belongs in `test_step` alongside `rng`/`canon`/`world`, not
+in the `difftest`/`corpus` executable below.
+
+One of the six invariants (permutation-invariance of multiplayer input-application order) needs
+more than one player moving in the same tick, which `core/world.zig` does not model. Rather than
+build the real multiplayer ABI (`docs/abi-decisions.md`, TASK-023/TASK-053, milestone m-8) years
+ahead of schedule, `core/fuzz_seeds.zig` adds a private, non-ABI, test-only two-player step
+primitive scoped only to prove that property — see `backlog/decisions/decision-020` for the exact
+scope (notably: no cross-player body collision) and why it lives here instead of `core/world.zig`.
 
 ## `zig build difftest`
 

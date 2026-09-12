@@ -41,6 +41,22 @@ pub fn build(b: *std.Build) void {
     const world_test = b.addTest(.{ .root_module = world });
     test_step.dependOn(&b.addRunArtifact(world_test).step);
 
+    // fuzz_seeds is Tier-B (docs/build-layout.md): 256 committed seeds
+    // checked against structural invariants rather than a recorded oracle
+    // trace, driving rng/canon/world directly — same no-allocator, no-libc
+    // constraints, so it belongs in `test_step` alongside them, not in the
+    // difftest/corpus executable below.
+    const fuzz_seeds = b.createModule(.{
+        .root_source_file = b.path("fuzz_seeds.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    fuzz_seeds.addImport("rng", rng);
+    fuzz_seeds.addImport("canon", canon);
+    fuzz_seeds.addImport("world", world);
+    const fuzz_seeds_test = b.addTest(.{ .root_module = fuzz_seeds });
+    test_step.dependOn(&b.addRunArtifact(fuzz_seeds_test).step);
+
     // difftest replays the committed JSONL corpus against world.zig
     // (TASK-020) — a separate executable/step, not folded into `test`,
     // since it needs an allocator and file I/O that rng/canon/world
