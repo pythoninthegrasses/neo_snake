@@ -43,7 +43,11 @@ Simulation is **fixed-timestep with an accumulator**, deliberately decoupled fro
 - `tickMs()` is re-read *inside* the loop, because eating can raise the speed mid-frame.
 
 Speed: `speedMul() = 1 + min(score, 40) * 0.035`, applied as `BASE_MS / speedMul()` and floored at
-`MIN_MS`. Tuning difficulty means editing `BASE_MS` (130) / `MIN_MS` (55) — not framerate.
+`MIN_MS`. Tuning difficulty means editing `BASE_MS` (130) / `MIN_MS` (55) — not framerate. (These
+two and the derived `TICK_PERIOD_US` table are ABI-frozen in the Godot port, per
+[abi-decisions.md](abi-decisions.md) freeze #5 — everything else this file hardcodes as a magic
+number instead moves into `game/content/{tuning,palette,modes}.json`, see
+[build-layout.md](build-layout.md).)
 
 ## Simulation (`advance()`)
 
