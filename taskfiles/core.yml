@@ -53,6 +53,38 @@ tasks:
           exit 1
         fi
 
+  abitest-purity:
+    desc: "Fail if core/abitest.zig imports anything besides std (TASK-025 AC #1)"
+    summary: |
+      task core:abitest-purity
+
+      Runs tools/validate_abi_test_purity.py, which greps core/abitest.zig
+      for @import(...) calls and fails if any argument besides "std" is
+      found. Tier-C tests must reach core/abi.zig exclusively through
+      @cImport(include/neo_snake.h); without this guard the file could
+      silently start @import()ing rng/canon/world/corpus directly and
+      degrade into a second copy of Tier-A.
+    cmds:
+      - ./tools/validate_abi_test_purity.py
+
+  abitest:
+    desc: "Run the Tier-C ABI conformance tests (core/abitest.zig, reached only via @cImport)"
+    summary: |
+      task core:abitest
+
+      Runs `zig build abitest` inside core/, which builds core/abitest.zig
+      against include/neo_snake.h via @cImport, linked against the static
+      library core/abi.zig produces (docs/build-layout.md). Five named
+      tests: the ABI version handshake, ns_body_copy's too-small-buffer
+      required-length report, every ns_result value reachable from some
+      call path, @sizeOf/@offsetOf on the wire structs matching
+      docs/canonical-state.md, and a committed corpus trace replaying to
+      its committed checksum using only the C API.
+    dir: core
+    deps: [abitest-purity]
+    cmds:
+      - zig build abitest
+
   difftest:
     desc: "Replay the committed Tier-B JSONL corpus against core/world.zig and assert every checksum/anchor matches"
     summary: |

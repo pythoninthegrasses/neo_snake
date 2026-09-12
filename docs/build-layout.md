@@ -96,6 +96,43 @@ default `install` step, so a plain `zig build`/`zig build install` does not buil
 build fuzzrun` (or `task oracle:fuzz`, which runs that first) does, leaving a stable
 `zig-out/bin/fuzzrun` for `fuzz.mjs` to invoke directly, once per generated seed.
 
+## `zig build abitest`
+
+`build.zig` also defines an `abitest` test module (`core/abitest.zig`, TASK-025): the Tier-C
+conformance suite. Unlike every other module here, it never `.addImport`s `rng`/`canon`/`world`/
+`corpus` — it reaches `core/abi.zig`'s implementation exclusively through `@cImport(include/
+neo_snake.h)`, so its module sets `.link_libc = true` and calls `.addIncludePath(b.path("../
+include"))` and `.linkLibrary(abi_lib)` (`Build.Module.linkLibrary`, not `Build.Step.Compile` —
+Zig 0.16.0 puts the method on the module, not the compile step). Linking `abi_lib` supplies the
+actual `ns_*` symbol implementations behind `@cImport`'s generated declarations; every ABI call in
+the test file takes a `?*cimport.struct_ns_world`, the opaque type Zig 0.16.0 generates for the
+header's forward-declared, never-defined `typedef struct ns_world ns_world;` — a bare `*anyopaque`
+does not coerce to it, so test storage buffers are declared as `*c.ns_world` directly via
+`@ptrCast`.
+
+Five named tests, one-for-one with TASK-025's description: the ABI version handshake
+(`NS_ERR_ABI_VERSION_MISMATCH` then `NS_OK`), `ns_body_copy` reporting the true required length on
+a too-small buffer, every `ns_result` value reachable from at least one call path, `@sizeOf`/
+`@offsetOf` on `c.ns_canon_header`/`c.ns_player_view` matching `docs/canonical-state.md`'s byte
+layout exactly, and a committed `game/tests/corpus/*.jsonl` trace replaying to its committed
+checksum using only the C API. The corpus-replay test bootstraps into the trace's tick-0 state via
+`ns_deserialize` of that tick's `"s"` full-state anchor, rather than `ns_world_init` followed by a
+queued direction: `ns_world_init` always starts a world in `.menu` (decision-015's menu-to-playing
+transition needs a queued direction to leave it), while every committed corpus trace was recorded
+from a world that started directly in `.playing` (`regen_corpus.mjs`'s `initialState()`, matching
+`core/difftest.zig`'s own `world_mod.initWorld(..., .playing)` bypass of the same transition).
+`ns_deserialize` is a real ABI entry point that overwrites all world state including `status`, so
+this reaches the same starting point without reimplementing any reset/RNG logic inside the test
+file. `ns_checksum(bytes, len, ...)` takes the *whole* already-encoded record (header + player
+records + the trailer `ns_serialize` just wrote) — it hashes only the prefix up to but not
+including the trailer's own bytes, so callers must pass the full serialized length, not a
+pre-trimmed one.
+
+`tools/validate_abi_test_purity.py` is the mechanical guard behind the "exclusively through
+`@cImport`" rule: it greps `core/abitest.zig` for every `@import("...")` argument and fails if
+anything besides `"std"` appears. Without it, Tier-C could silently degrade into a second copy of
+Tier-A by picking up a stray `@import("world")` or similar.
+
 ## `task check` wiring
 
 New `taskfiles/core.yml`, included in the root `taskfile.yml` as `core:`, with `test` and
@@ -119,6 +156,12 @@ zig-out/lib/libneo_snake.a`, asserting every defined global symbol name matches 
 mechanical form of that task's AC #1 ("no other exported symbols") — `core/abi.zig` is the only Zig
 file allowed to `export` (AC #2), and this check is what actually enforces it in `task check` rather
 than relying on a one-off manual `nm` read.
+
+`core:abitest` (TASK-025) runs immediately after `core:abi-symbols` and before `core:difftest`: it
+depends on `core:abitest-purity` (`tools/validate_abi_test_purity.py`, run first so a purity
+violation is reported before spending time on a `zig build`), then runs `zig build abitest` to
+build and run the five named Tier-C conformance tests against the same `libneo_snake.a`
+`core:abi-symbols` just verified.
 
 ## No allocator, no libc
 
