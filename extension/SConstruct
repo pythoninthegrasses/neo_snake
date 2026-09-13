@@ -30,8 +30,28 @@ sources = Glob("src/*.cpp")
 # Link core/zig-out/lib/libneo_snake.a (core/abi.zig, TASK-024) as an env.File(...)
 # rather than -lneo_snake -Lpath: a bare linker flag doesn't tell SCons the .a is
 # a real input, so a rebuilt core lib would silently not trigger a relink here.
-core_lib = env.File("../core/zig-out/lib/libneo_snake.a")
+#
+# Zig names a windows-gnu target's static library "neo_snake.lib" instead of
+# "libneo_snake.a" (still a plain ar archive of COFF objects underneath --
+# just Windows' own conventional extension); extension:build-windows
+# (TASK-046) always produces that name via `zig build abi
+# -Dtarget=x86_64-windows-gnu`, so pick the matching filename here too.
+core_lib_name = "neo_snake.lib" if env["platform"] == "windows" else "libneo_snake.a"
+core_lib = env.File("../core/zig-out/lib/" + core_lib_name)
 env.Append(LIBS=[core_lib])
+
+# Zig's windows-gnu std lib references raw NtAllocateVirtualMemory/
+# NtFreeVirtualMemory syscalls (panic/stack-guard machinery compiled into
+# every build, even one that never panics) that live in ntdll.dll. A
+# native `zig build-exe` resolves these itself when it does the final
+# link, but core/zig-out/lib/neo_snake.lib is only a static archive --
+# resolving them is deferred to whoever links it into something final,
+# which here is mingw's own `ld` (TASK-046). mingw-w64 ships an import
+# library for exactly this (libntdll.a); without it the final .dll link
+# fails with "undefined reference to `NtAllocateVirtualMemory'" under
+# godot-cpp's own -Wl,--no-undefined (tools/windows.py).
+if env["platform"] == "windows":
+    env.Append(LIBS=["ntdll"])
 
 # Output name and directory match godot-cpp's own test/SConstruct convention
 # (env["suffix"] already encodes platform/target/arch/.nothreads); game/bin/ is

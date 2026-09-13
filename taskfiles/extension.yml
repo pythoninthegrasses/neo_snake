@@ -65,3 +65,49 @@ tasks:
           ZIG_TARGET_FLAG: "-Dtarget=aarch64-macos"
       - scons platform=macos arch=arm64 target=template_debug
       - scons platform=macos arch=arm64 target=template_release
+
+  build-windows:
+    desc: "Cross-build the Windows x86_64 GDExtension via mingw-w64, for both debug and release targets (TASK-046)"
+    summary: |
+      task extension:build-windows
+
+      Windows counterpart to extension:build, cross-compiled from Linux
+      rather than run on a native Windows host or CI runner (decision-029):
+      the ABI boundary (include/neo_snake.h) is pure C with no libc
+      dependency crossing it, so a mingw-w64-produced GDExtension needs no
+      MSVC toolchain at all. Rebuilds core/zig-out/lib/neo_snake.lib
+      pinned to -Dtarget=x86_64-windows-gnu (Zig bundles its own
+      mingw-w64 headers/import libs, so no external mingw toolchain is
+      needed for this step), then runs scons twice inside extension/
+      (platform=windows use_mingw=yes use_static_cpp=yes arch=x86_64, once
+      per target=template_debug and target=template_release) so
+      extension/SConstruct produces
+      game/bin/libneo_snake.windows.template_debug.x86_64.dll and
+      .../template_release.x86_64.dll, matching
+      game/bin/neo_snake.gdextension's windows.debug.x86_64/
+      windows.release.x86_64 keys.
+
+      use_static_cpp=yes statically links MinGW's own libgcc/libstdc++
+      into the .dll (godot-cpp's tools/windows.py) so the built library
+      carries no MinGW runtime DLL dependency at all -- only Windows'
+      own system DLLs.
+
+      A -windows-gnu-built core lib or GDExtension .dll must never be
+      linked into or alongside an MSVC-toolchain build: MinGW's Itanium
+      C++ ABI/name-mangling and MSVC's are not compatible, even though
+      the C ABI this repo's own include/neo_snake.h exposes is unaffected
+      (decision-029).
+
+      Requires x86_64-w64-mingw32-gcc/g++ on PATH (docker/windows/Dockerfile,
+      TASK-046, installs Debian's mingw-w64 package). Gated platforms:
+      [linux] since this is always a cross-build from a Linux host, never
+      run natively on Windows or macOS.
+    platforms: [linux]
+    dir: extension
+    cmds:
+      - task: :core:abi-symbols
+        vars:
+          ZIG_TARGET_FLAG: "-Dtarget=x86_64-windows-gnu"
+          CORE_LIB_NAME: "neo_snake.lib"
+      - scons platform=windows use_mingw=yes use_static_cpp=yes arch=x86_64 target=template_debug
+      - scons platform=windows use_mingw=yes use_static_cpp=yes arch=x86_64 target=template_release

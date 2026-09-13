@@ -63,9 +63,18 @@ tasks:
       caller cross/native-pin the build explicitly (extension:build-macos,
       TASK-043); left empty it's zig's own default native-target build,
       unchanged from before TASK-043.
+
+      CORE_LIB_NAME (optional, default "libneo_snake.a") is the filename
+      zig build abi actually produces under zig-out/lib/ -- unchanged for
+      every ELF/Mach-O target, but Zig names a windows-gnu target's static
+      library "neo_snake.lib" instead (still a plain ar archive of COFF
+      objects, just Windows' own conventional extension) --
+      extension:build-windows (TASK-046) passes "neo_snake.lib" here to
+      match.
     dir: core
     vars:
       ZIG_TARGET_FLAG: '{{.ZIG_TARGET_FLAG | default ""}}'
+      CORE_LIB_NAME: '{{.CORE_LIB_NAME | default "libneo_snake.a"}}'
     cmds:
       - zig build abi {{.ZIG_TARGET_FLAG}}
       - |
@@ -74,9 +83,9 @@ tasks:
         # darwin); ELF's nm does not. Accept the optional underscore so this
         # check verifies the same ns_* naming guarantee on both platforms
         # rather than only on Linux.
-        bad=$(nm -g --defined-only zig-out/lib/libneo_snake.a | awk '{print $3}' | grep -vE '^_?ns_' || true)
+        bad=$(nm -g --defined-only zig-out/lib/{{.CORE_LIB_NAME}} | awk '{print $3}' | grep -vE '^_?ns_' || true)
         if [ -n "$bad" ]; then
-          echo "Unexpected exported symbols in libneo_snake.a:" >&2
+          echo "Unexpected exported symbols in {{.CORE_LIB_NAME}}:" >&2
           echo "$bad" >&2
           exit 1
         fi

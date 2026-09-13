@@ -1111,3 +1111,51 @@ installed, so a literal same-build-on-two-real-hosts test wasn't possible. What 
 (`sha256sum` match exactly). The pinned digest, checksummed downloads, and absence of any
 host-arch-conditional `RUN` step are what make that guarantee hold across host OSes too, not just
 across repeat runs on this one.
+
+## Windows x86_64 build via mingw cross-compilation ([[decision-029]], TASK-046)
+
+`docker/windows/Dockerfile` mirrors `docker/linux/Dockerfile`'s five-stage shape, cross-compiling
+the whole Windows GDExtension from a Linux host (route (a), decision-029) rather than a native
+Windows CI runner: no code-signing requirement applies to a GDExtension `.dll`, so route (a)'s
+"pure C ABI boundary, no libc crossing it" preference from the task's own Description applies
+outright.
+
+**Two toolchains are involved, not one.** Zig itself cross-compiles `core/`'s pure-Zig static
+library for `-Dtarget=x86_64-windows-gnu` (no external mingw needed for this step — Zig bundles its
+own mingw-w64 headers/import libs), but godot-cpp/SCons cannot use `zig cc` as a drop-in C++ cross
+compiler for the GDExtension shim's own `.cpp` sources — `third_party/godot-cpp/tools/windows.py`
+hardcodes real `x86_64-w64-mingw32-g++`/`-gcc`/`-gcc-ar`/`-ranlib` toolchain binary names, so a
+genuine mingw-w64 install (Debian's `g++-mingw-w64-x86-64` package) is required for that half of
+the build.
+
+**Zig names a windows-gnu target's static library `neo_snake.lib`, not `libneo_snake.a`** — still a
+plain `ar` archive of COFF objects underneath, just Windows' own conventional extension.
+`taskfiles/core.yml`'s `abi-symbols` task gained an optional `CORE_LIB_NAME` var (default
+`"libneo_snake.a"`, unchanged for every other target) so its `nm`-based symbol check can target the
+right filename, and `extension/SConstruct` picks the matching name via `env["platform"] ==
+"windows"`.
+
+**The final link needs an explicit `-lntdll`.** Zig's windows-gnu std lib compiles panic/stack-guard
+machinery referencing raw `NtAllocateVirtualMemory`/`NtFreeVirtualMemory` syscalls into every build;
+a native `zig build-exe` resolves these itself, but `neo_snake.lib` is only a static archive, so
+resolving them is deferred to whoever performs the final link — mingw's own `ld`, under godot-cpp's
+`-Wl,--no-undefined`. `extension/SConstruct` appends `LIBS=["ntdll"]` for the windows platform,
+linking mingw-w64's own `libntdll.a` import library.
+
+**`extension:build-windows`** (`taskfiles/extension.yml`, gated `platforms: [linux]`, excluded from
+`task check`'s chain — same precedent as `extension:build-macos`) rebuilds the core lib pinned to
+`-Dtarget=x86_64-windows-gnu`, then runs `scons platform=windows use_mingw=yes use_static_cpp=yes
+arch=x86_64` once per `target=template_debug`/`target=template_release`, producing
+`game/bin/libneo_snake.windows.template_debug.x86_64.dll` and `.../template_release.x86_64.dll`.
+`use_static_cpp=yes` statically links MinGW's own libgcc/libstdc++ into the `.dll` — verified via
+`objdump -p` showing imports from only `KERNEL32.dll`, `msvcrt.dll`, and `ntdll.dll`, no MinGW
+runtime DLL dependency.
+
+**Exactly two new `.gdextension` keys**, `windows.debug.x86_64` and `windows.release.x86_64` — the
+task's own Description speculatively estimated four; checking godot-cpp's own reference project
+(`third_party/godot-cpp/test/project/my_test.gdextension`) shows one key per (target, arch) pair is
+the correct convention, matching the existing `linux.debug.x86_64` key's shape.
+
+**A `-windows-gnu`-built lib or `.dll` must never be linked into or alongside an MSVC-toolchain
+build** (AC#3): MinGW's Itanium C++ ABI/name-mangling and MSVC's are not compatible, even though the
+plain-C ABI `include/neo_snake.h` exposes across the Zig/C++ boundary is itself unaffected.
