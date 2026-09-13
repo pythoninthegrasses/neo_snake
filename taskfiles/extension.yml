@@ -14,6 +14,14 @@ tasks:
       rebuilt core lib triggers a relink, unlike a bare -lneo_snake flag),
       and produces game/bin/libneo_snake<suffix><SHLIBSUFFIX> — the shared
       library game/bin/neo_snake.gdextension (TASK-027) will point to.
+
+      Gated platforms: [linux] (TASK-043): a bare `scons` on macOS defaults
+      to arch=universal (x86_64 + arm64), but core/zig-out/lib/libneo_snake.a
+      is single-arch (whatever `zig build abi` natively targets) -- linking
+      universal against it fails with "symbol(s) not found for architecture
+      x86_64". extension:build-macos is the macOS-specific replacement,
+      pinning arch=arm64 explicitly for both targets.
+    platforms: [linux]
     dir: extension
     cmds:
       - task: :core:abi-symbols
