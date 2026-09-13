@@ -37,7 +37,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SRC_DIR = REPO_ROOT / "audio" / "src" / "sfx"
-DEFAULT_OUT_DIR = REPO_ROOT / "audio" / "build" / "sfx"
+# Committed under game/content/ (not audio/build/) so Godot's res:// resource
+# filesystem can load these WAVs directly, matching the convention
+# game/content/{tuning,palette,modes}.json already use for checked-in
+# content the presentation layer reads at runtime (TASK-039).
+DEFAULT_OUT_DIR = REPO_ROOT / "game" / "content" / "audio" / "sfx"
 PATCH_SUFFIX = ".chip.json"
 
 SELF_TEST_PATCH = {

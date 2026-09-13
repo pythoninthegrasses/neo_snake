@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "sample_rate": 44100,
+  "duration_ms": 260.0,
+  "waveform": "noise",
+  "pitch_hz": [[0, 900.0], [260, 90.0]],
+  "volume": [[0, 0.0], [5, 0.7], [40, 0.5], [260, 0.0]]
+}

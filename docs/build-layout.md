@@ -693,12 +693,16 @@ over IEEE-754 double arithmetic, which is deterministic given the same code and 
 renders an embedded fixture patch twice into in-memory buffers and asserts the bytes are identical;
 `task audio:check` runs this before anything else.
 
-**`task audio:render` vs. `task audio:check`.** `render` regenerates `audio/build/sfx/*.wav` from
-every `audio/src/sfx/*.chip.json` — run this after authoring or editing a patch, then commit the WAV
-alongside it (TASK-039 AC#2). `check` re-renders every patch into memory and diffs it byte-for-byte
+**`task audio:render` vs. `task audio:check`.** `render` regenerates `game/content/audio/sfx/*.wav`
+from every `audio/src/sfx/*.chip.json` — run this after authoring or editing a patch, then commit the
+WAV alongside it (TASK-039 AC#2). `check` re-renders every patch into memory and diffs it byte-for-byte
 against the committed WAV, failing loudly on any mismatch (a stale committed WAV that no longer
-matches its source), and passes trivially when zero patches exist yet (true today — TASK-039 is what
-actually populates `audio/src/sfx/`).
+matches its source), and passes trivially when zero patches exist (true when this task landed, before
+TASK-039 populated `audio/src/sfx/`).
+
+`DEFAULT_OUT_DIR` was originally `audio/build/sfx/` when this tool first landed; TASK-039 moved it to
+`game/content/audio/sfx/` once real Godot playback needed the WAVs reachable through `res://` — see
+that section below for why.
 
 **Why this *is* wired into `task check`, unlike `parity:capture` or `oracle:fuzz`.** Both of those are
 excluded for a concrete environmental reason (a GUI/Wayland dependency, or being open-ended discovery
@@ -710,3 +714,67 @@ no reason to keep it out of the one documented gate; `check:`'s command chain no
 No entry in `backlog/decisions/` was needed for this task: [[decision-018]] already establishes that
 `reference/snake.html` has no audio to diverge from, so there is no oracle-behavior deviation to
 record here — only new, purely-additive build tooling.
+
+## `audio/src/sfx/*.chip.json` + `game/presentation/audio/sfx_player.gd` (TASK-039)
+
+The eight named cues (`eat`, `die`, `turn`, `start`, `pause`, `win`, `ui_move`, `ui_confirm`) as
+`.chip.json` patches under the schema `tools/render_audio.py` (TASK-038) defines: `eat` is a short
+upward `square` chirp, `die` a descending-pitch `noise` decay, `turn`/`ui_move` quiet ~20-25ms blips
+so they don't stack unpleasantly under rapid input, `start` and `win` step through a short
+`square`/`triangle` arpeggio via stacked-flat breakpoints (`[[t, v], [t2, v], [t2+0.001, v2], ...]` —
+a near-zero time gap holds the first pitch flat then jumps instantly to the next, since the schema's
+envelopes are otherwise linearly interpolated), and `pause` a single flat `triangle` tone. Rendered via
+`task audio:render` to `game/content/audio/sfx/*.wav` and committed alongside the source patches.
+
+**Why `game/content/audio/sfx/`, not `audio/build/sfx/`.** TASK-038 shipped `render_audio.py` with a
+default out-dir of `audio/build/sfx/`, a directory outside the Godot project (`game/`) entirely. That
+was fine as long as nothing needed to actually load a rendered WAV, but `SfxPlayer` (below) loads these
+through Godot's `res://` resource filesystem, which only sees paths under `game/`. Rather than
+symlinking a directory into the project (an extra moving part, and this repo has no existing precedent
+for a checked-in symlink) or keeping two copies of the same WAV in sync, this task simply moved
+`DEFAULT_OUT_DIR` in-place to `game/content/audio/sfx/` — co-located with the other checked-in content
+`game/content/loader.gd` already reads (`tuning.json`, `palette.json`, `modes.json`), the established
+convention in this repo for data the presentation layer loads by path at runtime. `audio/src/sfx/`
+(the source patches) stays at the repo root, matching the milestone's own naming.
+
+**`SfxPlayer` (`game/presentation/audio/sfx_player.gd`).** One `AudioStreamPlayer` child per cue,
+keyed by name; `play(cue)` just calls that player's own `.play()`. No pooling or polyphony — every cue
+is a single one-shot under ~450ms, so retriggering restarts it, which is unnoticeable at this length.
+`GameScreen` owns the one instance (`sfx`), matching how it already owns `board_view`/`hud`/`overlay`/
+`input_router`/`app_lifecycle`. Lives entirely in presentation — `core/*.zig` and `include/neo_snake.h`
+carry no audio-related symbol, satisfying the milestone's "core never knows audio exists" rule (the
+other two uncoupling rules, catch-up coalescing and replay suppression, are TASK-041's job, not this
+one's).
+
+**Wiring (`game_screen.gd`).** `eat`/`die`/`win` fire from the same `event_drain()` match block that
+already drives `board_view.notify_eat()`/`fx.flash` (TASK-036) — one `sfx.play()` call added per
+existing `EVENT_*` branch, no new control flow. `start` fires once from `_start_or_restart()`, the
+existing single choke point every start/restart path (menu direction input, R, the overlay button)
+already funnels through. `pause` fires only on the false→true edge of `_on_pause_requested()`'s toggle
+(pausing, not resuming — no cue was requested for resume). `turn` fires from `_on_direction_queued()`'s
+gameplay branch (after the menu/dead auto-start branch, which plays `start` instead, per the class doc's
+existing note on `queueDir()`'s auto-start quirk). `ui_confirm` fires from `_on_overlay_action_pressed()`
+unconditionally (so pressing "Start" plays both `ui_confirm`, a button-click acknowledgment, and
+`start`, the gameplay stinger — a deliberate, common two-cue layering, not a bug) and `ui_move` from
+`_on_mode_selected()` (mode dropdown cycling).
+
+**Testing (`game/tests/test_sfx_player.gd`, `game/tests/test_game_screen.gd`).** `test_sfx_player.gd`
+asserts all eight cues load a real `AudioStreamWAV` and that `play()` sets the corresponding player's
+`playing` to `true` — the closest automated proxy to "audibly triggered" a headless test runner can
+assert. `test_game_screen.gd` gained one case per UI-reachable cue (`start`, `pause`, `turn`,
+`ui_confirm`, `ui_move`) asserting the same `playing` flag after invoking the real handler. `eat`/`die`/
+`win` are deliberately left unasserted at this layer — driving a real eat/death/win through
+`GameScreen._process()` needs a specific food/snake state this repo has no existing test harness for,
+and the pre-existing `board_view.notify_eat()`/`fx.flash` calls sitting in the exact same match block
+have never had a `GameScreen`-level test either; this follows that same established boundary rather
+than inventing new state-forcing machinery for audio alone.
+
+**AC#3's manual check.** The sandbox this task ran in reports no sound card (`aplay -l` finds none), so
+no literal by-ear confirmation was possible here. What was verified instead: every rendered WAV is
+non-silent and non-clipping (peak sample well under the 16-bit ceiling on every cue — checked by hand
+against the committed files), and the `SfxPlayer`/`GameScreen` tests above confirm every cue actually
+starts playback when its real trigger fires. A human with working audio output should still do a quick
+real listen-through before calling this fully done.
+
+No entry in `backlog/decisions/` was needed: audio remains purely additive per [[decision-018]], and
+the `DEFAULT_OUT_DIR` move is a build-tooling detail, not a `reference/snake.html` behavior deviation.
