@@ -34,6 +34,19 @@ GDTOOLKIT_VERSION="4.5.0"
 # on the version.
 EMSDK_VERSION="4.0.11"
 
+# Furnace (TASK-040): the tracker used to author chiptune music masters
+# (audio/src/music/*.fur), rendered offline to committed OGG by
+# tools/render_music.py. Checksum-verified download, same pattern as the
+# Godot fallback above -- not installed via mise (no Furnace mise/aqua
+# package exists). Linux ships as a tarball; macOS only ships a DMG (no zip
+# alternative), so its install path differs from Godot's (see
+# install_furnace in tools/bootstrap.py).
+FURNACE_VERSION="0.6.8.3"
+FURNACE_LINUX_URL="https://github.com/tildearrow/furnace/releases/download/v0.6.8.3/furnace-0.6.8.3-linux-x86_64.tar.gz"
+FURNACE_LINUX_SHA256="298a4e30bbdfe5ad88ed7f3bd90bd657a3f0b2e6e7dfc2091663dda71424d555"
+FURNACE_MACOS_URL="https://github.com/tildearrow/furnace/releases/download/v0.6.8.3/furnace-0.6.8.3-mac-arm64.dmg"
+FURNACE_MACOS_SHA256="3f2a925911c5e8babaedbee891bfda669305930a024af95b83a1103e55535755"
+
 # godot-cpp (TASK-004): vendored as a third_party/ git submodule, not a
 # checksum-verified download. Seeded here with upstream master's current
 # HEAD -- no godot-4.7-stable tag exists yet. TASK-004 re-verifies this pin

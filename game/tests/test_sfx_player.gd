@@ -32,3 +32,17 @@ func test_play_starts_playback_for_every_cue() -> void:
 
 func test_play_on_an_unknown_cue_does_not_error() -> void:
 	_sfx.play("not_a_real_cue")
+
+
+func test_ui_cues_route_to_ui_bus() -> void:
+	for cue in SfxPlayer.UI_CUES:
+		var player: AudioStreamPlayer = _sfx._players[cue]
+		assert_str(player.bus).is_equal("UI")
+
+
+func test_non_ui_cues_route_to_sfx_bus() -> void:
+	for cue in SfxPlayer.CUES:
+		if cue in SfxPlayer.UI_CUES:
+			continue
+		var player: AudioStreamPlayer = _sfx._players[cue]
+		assert_str(player.bus).is_equal("SFX")

@@ -66,12 +66,21 @@ def godot_templates_dir(pins: dict[str, str]) -> Path:
     return GAME_TOOLS / "xdg-data" / "godot" / "export_templates" / require_pin(pins, "GODOT_TEMPLATE_VERSION")
 
 
-def godot_xdg_env() -> dict[str, str]:
+def game_tools_xdg_env() -> dict[str, str]:
+    """XDG overrides so a bootstrapped GUI tool (Godot, Furnace) reads/writes
+    its config under .tools/game/ instead of the real user $HOME."""
     return {
         "XDG_DATA_HOME": str(GAME_TOOLS / "xdg-data"),
         "XDG_CONFIG_HOME": str(GAME_TOOLS / "xdg-config"),
         "XDG_CACHE_HOME": str(GAME_TOOLS / "xdg-cache"),
     }
+
+
+def furnace_binary_path(pins: dict[str, str]) -> Path:
+    require_pin(pins, "FURNACE_VERSION")
+    if sys.platform == "darwin":
+        return GAME_TOOLS / "furnace" / "furnace.app" / "Contents" / "MacOS" / "furnace"
+    return GAME_TOOLS / "furnace" / "furnace"
 
 
 def godot_is_headless_capable(binary: Path) -> bool:

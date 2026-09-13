@@ -32,6 +32,10 @@ extends Control
 ## that knows chiptune cues exist -- core/*.zig carries no audio symbol.
 ## See docs/build-layout.md's TASK-039 section for the full cue-to-event
 ## wiring map.
+##
+## Music (TASK-040): music is a single MusicPlayer child, started once here
+## and looping continuously on the "Music" bus -- reference/snake.html has
+## no music, so there's no oracle-driven start/stop cue point to match.
 
 const COLS := 24
 const ROWS := 24
@@ -50,6 +54,7 @@ var input_router: InputRouter
 var app_lifecycle: AppLifecycle
 var save_store: SaveStore
 var sfx: SfxPlayer
+var music: MusicPlayer
 
 var _tuning: Dictionary
 var _palette: Dictionary
@@ -110,6 +115,10 @@ func _ready() -> void:
 
 	sfx = SfxPlayer.new()
 	add_child(sfx)
+
+	music = MusicPlayer.new()
+	add_child(music)
+	music.play()
 
 	_refresh_screen()
 	_maybe_drive_capture_state()

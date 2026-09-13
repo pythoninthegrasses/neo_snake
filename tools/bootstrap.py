@@ -7,7 +7,8 @@
 """
 Bootstrap pinned local game tooling: Godot export templates, (only if mise's
 godot asset is not usable headless on this platform) a checksum-verified
-fallback Godot binary, and the gdUnit4 test framework addon.
+fallback Godot binary, the gdUnit4 test framework addon, and the Furnace
+tracker binary.
 
 Godot itself is installed via mise (this repo's .tool-versions pins
 godot@<GODOT_RELEASE>) -- not by this script -- unless bootstrap finds that
@@ -15,17 +16,21 @@ asset unusable headless, in which case it downloads the pinned fallback
 binary under .tools/game/godot instead. Export templates are never
 distributed by mise, so they are always fetched here as a checksum-verified
 download. gdUnit4 is likewise a checksum-verified download, extracted to
-game/addons/gdUnit4 (not committed to git). All pins live in
+game/addons/gdUnit4 (not committed to git). Furnace (TASK-040) has no
+mise/aqua package at all, so it is always this script's checksum-verified
+download, extracted to .tools/game/furnace. All pins live in
 tools/game_toolchain.lock, overridable per-entry via same-named environment
 variables.
 
 Usage:
-    ./tools/bootstrap.py game [all|godot|gdunit4]
+    ./tools/bootstrap.py game [all|godot|gdunit4|furnace]
 """
 
 import hashlib
 import shutil
+import subprocess
 import sys
+import tarfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -34,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from toolchain import (  # noqa: E402
     GAME_TOOLS,
     REPO_ROOT,
+    furnace_binary_path,
     godot_fallback_binary_path,
     godot_is_headless_capable,
     godot_templates_dir,
@@ -133,6 +139,47 @@ def install_gdunit4(pins: dict[str, str]) -> None:
     print(f"gdUnit4 {version} is ready beneath {addon_dir}")
 
 
+def install_furnace_linux(pins: dict[str, str]) -> None:
+    downloads = GAME_TOOLS / "downloads"
+    archive = downloads / Path(require_pin(pins, "FURNACE_LINUX_URL")).name
+    download_verified(require_pin(pins, "FURNACE_LINUX_URL"), require_pin(pins, "FURNACE_LINUX_SHA256"), archive)
+    with tarfile.open(archive) as bundle:
+        bundle.extractall(GAME_TOOLS, filter="data")
+
+
+def install_furnace_macos(pins: dict[str, str]) -> None:
+    downloads = GAME_TOOLS / "downloads"
+    archive = downloads / Path(require_pin(pins, "FURNACE_MACOS_URL")).name
+    download_verified(require_pin(pins, "FURNACE_MACOS_URL"), require_pin(pins, "FURNACE_MACOS_SHA256"), archive)
+
+    app_root = GAME_TOOLS / "furnace"
+    mount_point = GAME_TOOLS / ".furnace-dmg-mount"
+    mount_point.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["hdiutil", "attach", "-nobrowse", "-quiet", "-mountpoint", str(mount_point), str(archive)],
+        check=True,
+    )
+    try:
+        app_bundle = next(mount_point.glob("*.app"))
+        shutil.rmtree(app_root, ignore_errors=True)
+        app_root.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(app_bundle, app_root / "furnace.app")
+    finally:
+        subprocess.run(["hdiutil", "detach", "-quiet", str(mount_point)], check=True)
+
+
+def install_furnace(pins: dict[str, str]) -> None:
+    binary = furnace_binary_path(pins)
+    if sys.platform == "darwin":
+        install_furnace_macos(pins)
+    elif sys.platform.startswith("linux"):
+        install_furnace_linux(pins)
+    else:
+        die(f"No pinned Furnace asset for platform {sys.platform!r}.")
+    binary.chmod(0o755)
+    print(f"Furnace {require_pin(pins, 'FURNACE_VERSION')} is ready at {binary}.")
+
+
 def install_godot() -> None:
     pins = load_pins()
 
@@ -158,12 +205,14 @@ def install_godot() -> None:
 
 
 def bootstrap_game(component: str) -> None:
-    if component not in ("all", "godot", "gdunit4"):
-        die("Usage: bootstrap.py game [all|godot|gdunit4]")
+    if component not in ("all", "godot", "gdunit4", "furnace"):
+        die("Usage: bootstrap.py game [all|godot|gdunit4|furnace]")
     if component in ("all", "godot"):
         install_godot()
     if component in ("all", "gdunit4"):
         install_gdunit4(load_pins())
+    if component in ("all", "furnace"):
+        install_furnace(load_pins())
 
 
 COMMANDS = {

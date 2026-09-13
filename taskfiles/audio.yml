@@ -36,3 +36,40 @@ tasks:
     cmds:
       - ./tools/render_audio.py --self-test
       - ./tools/render_audio.py --all --check
+
+  music-render:
+    desc: "Render audio/src/music/*.fur to committed OGG under game/content/audio/music/"
+    summary: |
+      task audio:music-render
+
+      Runs tools/render_music.py --all, regenerating
+      game/content/audio/music/*.ogg from every audio/src/music/*.fur
+      master via the pinned `furnace` binary (bootstrap with
+      `./tools/bootstrap.py game furnace` first). Committed under
+      game/content/ so Godot's res:// filesystem can load them directly
+      (TASK-040). Run this after adding/editing a master, then commit the
+      resulting OGG alongside it (TASK-040 AC#2).
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/render_music.py --all
+
+  music-check:
+    desc: "Assert render_music.py is reproducible and every committed music OGG decodes to the same samples as a fresh render of its source"
+    summary: |
+      task audio:music-check
+
+      Runs tools/render_music.py --self-test (proves two furnace renders of
+      the same .fur are byte-identical WAVs), then --all --check (re-renders
+      every audio/src/music/*.fur and decodes both it and the committed
+      game/content/audio/music/*.ogg with soundfile, failing if the decoded
+      samples differ -- the committed .ogg bytes themselves are never
+      byte-reproducible, since libogg randomizes each stream's serial
+      number, TASK-040). Requires the pinned `furnace` binary
+      (`./tools/bootstrap.py game furnace`), so -- unlike audio:check --
+      this is an external-binary dependency, the same category as
+      game:test's Godot/gdUnit4 requirement; it's wired into the main
+      `check:` chain on that same precedent (see docs/build-layout.md).
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/render_music.py --self-test
+      - ./tools/render_music.py --all --check
