@@ -51,6 +51,16 @@ env.Append(LIBS=[core_lib])
 # GDExtension's own primary library (that nesting is only for a *dependency*
 # framework per gdextension_file.rst's Contents/Frameworks convention).
 if env["platform"] == "macos":
+    # Apple's newer default linker (ld-prime, Xcode 26+) enforces 8-byte
+    # alignment on every Mach-O archive member; Zig's own archiver (which
+    # produces core/zig-out/lib/libneo_snake.a via `zig build abi`) doesn't
+    # satisfy that for at least one member, failing this final link step
+    # with "not 8-byte aligned in ... libneo_snake.a" (TASK-043). The older
+    # `ld_classic` linker (still shipped, `-Wl,-ld_classic`, deprecated but
+    # functional) doesn't enforce this and links the same archive cleanly --
+    # confirmed directly against the real archive on Xcode 26.6/mini before
+    # applying this flag.
+    env.Append(LINKFLAGS=["-Wl,-ld_classic"])
     bundle_name = "libneo_snake.macos.{}.framework".format(env["target"])
     library = env.SharedLibrary(
         "../game/bin/{}/{}".format(bundle_name, bundle_name.removesuffix(".framework")),
