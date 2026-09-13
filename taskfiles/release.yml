@@ -1,0 +1,234 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+vars:
+  KEYCHAIN: "neo_snake_ci_signing.keychain"
+  AUTH_KEY_PATH: "/tmp/neo_snake_auth_key.p8"
+  APP_GLOB: "{{.ROOT_DIR}}/game/build/macos/*.app"
+  DMG_GLOB: "{{.ROOT_DIR}}/game/build/macos/*.dmg"
+
+tasks:
+  ship-macos:
+    desc: "Export, sign, verify, and notarize the macOS build end to end (TASK-044)"
+    summary: |
+      task release:ship-macos
+
+      Runs the whole unattended macOS release pipeline as one task so the
+      ephemeral-keychain defer: cleanup (AC#4) covers every step that
+      needs the keychain, in declaration order, regardless of which step
+      fails. Mirrors ~/git/mt's release.yml shape: ephemeral keychain ->
+      export (signs the .app and its embedded GDExtension .framework) ->
+      verify-signing -> decode the App Store Connect API key -> notarize
+      + staple -> defer-cleanup (keychain first registered, api key
+      cleanup second, so Task's LIFO defer order tears down api key
+      material before the keychain).
+    platforms: [darwin]
+    cmds:
+      - task: keychain-setup
+      - defer: { task: keychain-cleanup }
+      - task: export-macos
+      - task: verify-signing
+      - task: decode-api-key
+      - defer: { task: cleanup-api-key }
+      - task: notarize
+
+  keychain-setup:
+    desc: "Create an ephemeral keychain and import the Developer ID certificate (mirrors ~/git/mt's release.yml)"
+    platforms: [darwin]
+    preconditions:
+      - sh: 'test -n "${APPLE_SIGNING_IDENTITY:-}"'
+        msg: "APPLE_SIGNING_IDENTITY is not set. Export it (Common Name of the Developer ID Application certificate) before running task release:ship-macos."
+      - sh: 'test -n "${APPLE_CERTIFICATE:-}"'
+        msg: "APPLE_CERTIFICATE is not set. Export it (base64-encoded .p12) before running task release:ship-macos."
+      - sh: 'test -n "${APPLE_CERTIFICATE_PASSWORD:-}"'
+        msg: "APPLE_CERTIFICATE_PASSWORD is not set."
+      - sh: 'test -n "${KEYCHAIN_PASSWORD:-}"'
+        msg: "KEYCHAIN_PASSWORD is not set."
+    cmds:
+      - |
+        cert_file="$(mktemp -t neo_snake_certificate).p12"
+        echo "$APPLE_CERTIFICATE" | base64 --decode > "$cert_file"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" {{.KEYCHAIN}}
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" {{.KEYCHAIN}}
+        security set-keychain-settings -t 3600 -u {{.KEYCHAIN}}
+        security list-keychains -d user -s {{.KEYCHAIN}} login.keychain
+        security import "$cert_file" -k {{.KEYCHAIN}} \
+          -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: \
+          -s -k "$KEYCHAIN_PASSWORD" {{.KEYCHAIN}}
+        security find-identity -v -p codesigning {{.KEYCHAIN}}
+        rm -f "$cert_file"
+
+  keychain-cleanup:
+    internal: true
+    desc: "Remove the ephemeral signing keychain (runs via defer: even when export-macos fails, AC#4)"
+    platforms: [darwin]
+    cmds:
+      - security default-keychain -s login.keychain-db
+      - security delete-keychain {{.KEYCHAIN}} || true
+
+  export-macos:
+    desc: "Headless-export the macOS release build (signed .app packed into a DMG) via Godot"
+    summary: |
+      task release:export-macos
+
+      Runs godot --headless --export-release macOS, which builds
+      game/build/macos/Neo Snake.dmg directly (Godot's own DMG packaging,
+      darwin-only). The "macOS" preset in game/export_presets.cfg signs
+      both the main .app and the embedded
+      libneo_snake.macos.template_release.framework GDExtension with
+      APPLE_SIGNING_IDENTITY (resolved from the ephemeral keychain
+      release:keychain-setup just populated) and hardened runtime enabled
+      -- required for notarization to succeed.
+
+      Over a bare SSH session, godot's internal codesign shell-outs fail
+      with errSecInternalComponent: SSH runs in a different security/audit-
+      session bootstrap namespace than the console GUI login session, so
+      securityd won't release the imported private key to a child process
+      of an SSH shell. `sudo launchctl asuser <uid>` re-attaches the whole
+      process tree into the GUI session's bootstrap namespace before godot
+      (and its child codesign calls) ever start, which is why the export is
+      wrapped that way below instead of just wrapping a standalone codesign
+      call. Requires the scoped NOPASSWD sudoers.d entry for
+      `/bin/launchctl asuser` (see docs/build-layout.md) -- this task is a
+      no-op change on a machine with a real console GUI session and normal
+      SSH signing (no wrapping needed there); it's specifically for mini's
+      headless-over-SSH topology.
+
+      Invokes the mise-resolved godot binary directly instead of going
+      through ./tools/run.py: confirmed by direct testing that
+      ./tools/run.py's `#!/usr/bin/env -S uv run --script` shebang breaks
+      audit-session inheritance somewhere in its uv/python exec chain, so a
+      godot process launched that way still hits errSecInternalComponent
+      even under the launchctl asuser bridge, while launching the same
+      godot binary directly under the bridge (no uv layer) signs correctly.
+      Sets the same XDG_DATA_HOME/XDG_CONFIG_HOME/XDG_CACHE_HOME
+      tools/run.py would (game_tools_xdg_env() in tools/toolchain.py) so
+      godot's own config/import cache still lands under .tools/game/ rather
+      than leaking into the real $HOME.
+    platforms: [darwin]
+    deps: [":game:import"]
+    cmds:
+      - mkdir -p "{{.ROOT_DIR}}/game/build/macos"
+      - |
+        godot_bin=$(mise which godot)
+        sudo launchctl asuser "$(id -u)" \
+          env PATH="$PATH" \
+              XDG_DATA_HOME="{{.ROOT_DIR}}/.tools/game/xdg-data" \
+              XDG_CONFIG_HOME="{{.ROOT_DIR}}/.tools/game/xdg-config" \
+              XDG_CACHE_HOME="{{.ROOT_DIR}}/.tools/game/xdg-cache" \
+          "$godot_bin" --headless --path game --export-release macOS
+        # sudo launchctl asuser attaches to the GUI session but keeps root's
+        # EUID (confirmed: `sudo launchctl asuser <uid> id` reports uid=0),
+        # so the DMG godot just wrote comes out root-owned -- hand it back.
+        # Routed through the same launchctl asuser invocation (rather than a
+        # bare `sudo chown`) so it's covered by the scoped
+        # `/bin/launchctl asuser *` NOPASSWD rule instead of needing a
+        # separate sudoers grant.
+        sudo launchctl asuser "$(id -u)" chown "$(id -u):$(id -g)" {{.DMG_GLOB}}
+
+  verify-signing:
+    desc: "Independently verify the .app and its embedded .framework are signed (AC#2)"
+    summary: |
+      task release:verify-signing
+
+      Mirrors ~/git/mt/taskfiles/ci.yml's verify-signing task. The Godot-
+      specific wrinkles over mt: (1) the GDExtension .framework embedded in
+      the .app is verified directly (not just assumed covered by the .app's
+      --deep check), since it is loaded via dlopen at runtime rather than
+      linked, and codesign --verify --deep --strict does not walk into it;
+      (2) godot writes straight to the .dmg with no loose .app left on
+      disk (unlike mt, which packages a directory tree it can inspect
+      as-is), so this task mounts the DMG read-only, verifies the .app
+      inside the mounted volume, and always detaches it (trap on EXIT,
+      even on failure).
+    platforms: [darwin]
+    preconditions:
+      - sh: ls {{.DMG_GLOB}} 2>/dev/null
+        msg: "No DMG found. Run 'task release:export-macos' first."
+    cmds:
+      - |
+        dmg=$(ls {{.DMG_GLOB}} | head -n1)
+        mount_point=$(hdiutil attach -nobrowse -readonly "$dmg" | tail -1 | awk -F'\t' '{print $3}')
+        trap 'hdiutil detach "$mount_point" >/dev/null 2>&1 || true' EXIT
+
+        app=$(ls -d "$mount_point"/*.app | head -n1)
+        framework="$app/Contents/Frameworks/libneo_snake.macos.template_release.framework"
+        echo "resolved app bundle: $app"
+        echo "resolved embedded framework: $framework"
+        if [ ! -d "$framework" ]; then
+          echo "error: embedded framework not found at $framework" >&2
+          exit 1
+        fi
+
+        echo "verifying embedded framework signature: $framework"
+        codesign --verify --strict --verbose=2 "$framework"
+
+        echo "verifying embedded framework hardened runtime flag"
+        framework_display=$(codesign --display --verbose=4 "$framework" 2>&1)
+        if ! echo "$framework_display" | grep -q 'flags=0x[0-9a-fA-F]*(runtime)'; then
+          echo "error: embedded framework is not signed with the hardened runtime flag" >&2
+          echo "--- codesign --display --verbose=4 output ---" >&2
+          echo "$framework_display" >&2
+          exit 1
+        fi
+
+        echo "verifying app bundle nested code signatures: $app"
+        codesign --verify --deep --strict --verbose=2 "$app"
+
+        echo "verifying dmg signature: $dmg"
+        codesign --verify --strict --verbose=2 "$dmg"
+
+  decode-api-key:
+    internal: true
+    desc: "Decode the App Store Connect API key for notarytool"
+    platforms: [darwin]
+    preconditions:
+      - sh: 'test -n "${APPLE_API_KEY_B64:-}"'
+        msg: "APPLE_API_KEY_B64 is not set. Export it (base64-encoded .p8 App Store Connect API key) before running task release:ship-macos."
+    cmds:
+      - echo "$APPLE_API_KEY_B64" | base64 --decode > {{.AUTH_KEY_PATH}}
+
+  cleanup-api-key:
+    internal: true
+    desc: "Remove the decoded App Store Connect API key (runs via defer:, AC#4)"
+    platforms: [darwin]
+    cmds:
+      - rm -f {{.AUTH_KEY_PATH}}
+
+  notarize:
+    desc: "Notarize and staple the exported DMG (AC#1, AC#3)"
+    summary: |
+      task release:notarize
+
+      Mirrors ~/git/mt/taskfiles/ci.yml's notarize task, plus a final spctl
+      Gatekeeper assessment mt doesn't do: notarytool submit --wait against
+      the DMG release:export-macos produced, then stapler staple so
+      Gatekeeper can verify offline without a network round trip on the
+      downloading machine, then spctl -a --type open against the stapled
+      DMG as the automatable proxy for AC#1 ("opens on a clean Mac with no
+      Gatekeeper prompt") -- rejects loudly if the assessment isn't
+      "accepted"/"source=Notarized Developer ID" instead of silently
+      trusting notarytool's own submit response.
+    platforms: [darwin]
+    preconditions:
+      - sh: ls {{.DMG_GLOB}} 2>/dev/null
+        msg: "No DMG found. Run 'task release:export-macos' first."
+      - sh: test -f {{.AUTH_KEY_PATH}}
+        msg: "Apple API key not found at {{.AUTH_KEY_PATH}}. Run 'task release:decode-api-key' first."
+      - sh: 'test -n "${APPLE_API_KEY:-}"'
+        msg: "APPLE_API_KEY is not set."
+      - sh: 'test -n "${APPLE_API_ISSUER:-}"'
+        msg: "APPLE_API_ISSUER is not set."
+    cmds:
+      - xcrun notarytool submit {{.DMG_GLOB}}
+          --key {{.AUTH_KEY_PATH}}
+          --key-id "$APPLE_API_KEY"
+          --issuer "$APPLE_API_ISSUER"
+          --wait
+      - xcrun stapler staple {{.DMG_GLOB}}
+      - |
+        dmg=$(ls {{.DMG_GLOB}} | head -n1)
+        echo "verifying Gatekeeper assessment (AC#1): $dmg"
+        spctl -a -vv --type open --context context:primary-signature "$dmg"
