@@ -98,3 +98,30 @@ func test_hud_reflects_score_and_status_after_start() -> void:
 	_screen._start_or_restart()
 	_screen._refresh_screen()
 	assert_str(_screen.hud._status_label.text).is_equal(GameScreenState.SCREEN_PLAYING.capitalize())
+
+
+func test_start_or_restart_plays_the_start_cue() -> void:
+	_screen._start_or_restart()
+	assert_bool(_screen.sfx._players["start"].playing).is_true()
+
+
+func test_pause_requested_while_playing_plays_the_pause_cue() -> void:
+	_screen._start_or_restart()
+	_screen._on_pause_requested()
+	assert_bool(_screen.sfx._players["pause"].playing).is_true()
+
+
+func test_direction_input_while_playing_plays_the_turn_cue() -> void:
+	_screen._start_or_restart()
+	_screen._on_direction_queued(SimulationWorld.DIR_UP)
+	assert_bool(_screen.sfx._players["turn"].playing).is_true()
+
+
+func test_overlay_action_pressed_plays_the_ui_confirm_cue() -> void:
+	_screen._on_overlay_action_pressed()
+	assert_bool(_screen.sfx._players["ui_confirm"].playing).is_true()
+
+
+func test_mode_selected_plays_the_ui_move_cue() -> void:
+	_screen._on_mode_selected("classic")
+	assert_bool(_screen.sfx._players["ui_move"].playing).is_true()

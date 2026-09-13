@@ -27,6 +27,11 @@ extends Control
 ## NS_EVENT_DIE event kinds core/abi.zig's stepOneTick() synthesizes (it
 ## diffs pre/post score and status around each tick), drained here via
 ## SimulationWorld.event_drain() -- not a derived full-board check.
+##
+## Audio (TASK-039): sfx is a single SfxPlayer child, the only thing here
+## that knows chiptune cues exist -- core/*.zig carries no audio symbol.
+## See docs/build-layout.md's TASK-039 section for the full cue-to-event
+## wiring map.
 
 const COLS := 24
 const ROWS := 24
@@ -44,6 +49,7 @@ var overlay: OverlayPanel
 var input_router: InputRouter
 var app_lifecycle: AppLifecycle
 var save_store: SaveStore
+var sfx: SfxPlayer
 
 var _tuning: Dictionary
 var _palette: Dictionary
@@ -102,6 +108,9 @@ func _ready() -> void:
 	app_lifecycle.focus_lost.connect(_on_focus_lost)
 	add_child(app_lifecycle)
 
+	sfx = SfxPlayer.new()
+	add_child(sfx)
+
 	_refresh_screen()
 	_maybe_drive_capture_state()
 
@@ -152,11 +161,14 @@ func _process(delta: float) -> void:
 				SimulationWorld.EVENT_EAT:
 					if pre_food_x != BoardGeometry.NO_CELL_COORD:
 						board_view.notify_eat(pre_food_x, pre_food_y)
+					sfx.play("eat")
 				SimulationWorld.EVENT_DIE:
 					_is_win = false
 					board_view.fx.flash = 1.0
+					sfx.play("die")
 				SimulationWorld.EVENT_WIN:
 					_is_win = true
+					sfx.play("win")
 
 	_refresh_screen()
 
@@ -205,6 +217,8 @@ func _on_pause_requested() -> void:
 		_start_or_restart()
 	else:
 		_paused = not _paused
+		if _paused:
+			sfx.play("pause")
 		_refresh_screen()
 
 ## R (restart_requested): reference/snake.html's R handler always calls
@@ -230,6 +244,7 @@ func _on_overlay_action_pressed() -> void:
 	var view := world.player_view_get(0)
 	if view.result != SimulationWorld.OK:
 		return
+	sfx.play("ui_confirm")
 	if view.status == BoardGeometry.STATUS_PLAYING and _paused:
 		_paused = false
 		_refresh_screen()
@@ -243,6 +258,7 @@ func _start_or_restart() -> void:
 	world.queue_dir(0, SimulationWorld.DIR_RIGHT)
 	_paused = false
 	_is_win = false
+	sfx.play("start")
 	_refresh_screen()
 
 ## Mirrors queueDir()'s own auto-start branch (snake.html:576): any
@@ -257,9 +273,11 @@ func _on_direction_queued(dir: int) -> void:
 	if view.result == SimulationWorld.OK and (view.status == BoardGeometry.STATUS_MENU or view.status == BoardGeometry.STATUS_DEAD):
 		_start_or_restart()
 		return
+	sfx.play("turn")
 	world.queue_dir(0, dir)
 
 func _on_mode_selected(mode_id: String) -> void:
+	sfx.play("ui_move")
 	_current_mode_id = mode_id
 
 ## Mirrors reference/snake.html's blur auto-pause (snake.html:620), which

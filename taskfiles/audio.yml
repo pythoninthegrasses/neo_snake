@@ -4,12 +4,14 @@ set: ['e', 'u', 'pipefail']
 
 tasks:
   render:
-    desc: "Render audio/src/sfx/*.chip.json patches to committed WAVs under audio/build/sfx/"
+    desc: "Render audio/src/sfx/*.chip.json patches to committed WAVs under game/content/audio/sfx/"
     summary: |
       task audio:render
 
-      Runs tools/render_audio.py --all, regenerating audio/build/sfx/*.wav
-      from every audio/src/sfx/*.chip.json patch. Run this after
+      Runs tools/render_audio.py --all, regenerating
+      game/content/audio/sfx/*.wav from every audio/src/sfx/*.chip.json
+      patch. Committed under game/content/ (not audio/build/) so Godot's
+      res:// filesystem can load them directly (TASK-039). Run this after
       adding/editing a patch, then commit the resulting WAV alongside it
       (TASK-039 AC#2).
     dir: "{{.ROOT_DIR}}"
@@ -24,8 +26,8 @@ tasks:
       Runs tools/render_audio.py --self-test (proves two renders of the
       same patch are byte-identical, TASK-038 AC#2), then --all --check
       (re-renders every audio/src/sfx/*.chip.json into memory and diffs it
-      against the committed audio/build/sfx/*.wav, failing on any byte
-      diff, TASK-038 AC#3). Passes trivially with 0 patches. Pure stdlib
+      against the committed game/content/audio/sfx/*.wav, failing on any
+      byte diff, TASK-038 AC#3). Passes trivially with 0 patches. Pure stdlib
       Python, no Wayland/GUI dependency, so -- unlike parity:capture or
       oracle:fuzz -- there's no environmental reason to keep this out of
       `task check`; it's wired into the main chain (see
