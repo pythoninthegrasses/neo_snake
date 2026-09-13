@@ -12,12 +12,17 @@
 customs = [File("custom.py").srcnode().abspath]
 env = SConscript("../third_party/godot-cpp/SConstruct", {"api_version": "4.7", "customs": customs})
 
-# godot-cpp's own generated-bindings object count blows past this system's
+# godot-cpp's own generated-bindings object count blows past Linux's
 # ARG_MAX for a bare `ar` invocation ("Argument list too long"); godot-cpp's
 # own web.py platform hits the same wall and works around it the same way,
 # via the same two-line ARCOM_POSIX + TEMPFILE(ARCOM_POSIX) pair (tools/web.py).
-env["ARCOM_POSIX"] = env["ARCOM"].replace("$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
-env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"
+# macOS's default ARG_MAX is large enough that the same object list never
+# hits the wall, and its BSD `ar` doesn't accept GNU ar's response-file
+# invocation this pair produces (TASK-043) -- so only apply it where it's
+# actually load-bearing.
+if env["platform"] != "macos":
+    env["ARCOM_POSIX"] = env["ARCOM"].replace("$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
+    env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"
 
 env.Append(CPPPATH=["src/", "../include"])
 sources = Glob("src/*.cpp")
