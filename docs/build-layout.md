@@ -1071,3 +1071,43 @@ stapling, `spctl` reporting `accepted`, both the `.framework` and `.app` indepen
 with hardened runtime, credential preconditions failing with the intended messages when unset, and a
 forced-failure scratch-taskfile run confirming `defer:`-registered keychain cleanup still executes
 when `export-macos` fails.
+
+## Linux x86_64 build via Docker ([[decision-028]], TASK-045)
+
+`docker/linux/Dockerfile` is a five-stage build — `deps` (base toolchain) → `src` (repo source) →
+`check` / `build` (parallel targets off `src`) → `artifacts` (extraction only) — that produces
+`game/bin/libneo_snake.linux.template_debug.x86_64.so`, matching TASK-043's precedent that a
+platform "build" task's deliverable is the GDExtension bundle itself, not a full Godot export.
+
+```
+docker build --target check .
+docker build --target artifacts --output type=local,dest=dist .
+```
+
+**`check` runs Tier-A/B/C** (`task core:test core:difftest core:abitest`) — no Godot, SCons, or
+godot-cpp needed, since none of those three tiers touch the ABI/GDExtension layer. Tier-D
+(`game:test`) needs a full Godot install and is out of scope for this container.
+
+**`build` pins the glibc floor to `x86_64-linux-gnu.2.28`** via `taskfiles/extension.yml`'s `build:`
+task, which gained an optional `ZIG_TARGET_FLAG` var (mirroring the mechanism `extension:build-macos`
+already had for `-Dtarget=aarch64-macos`; empty by default, so `extension:build` is unchanged outside
+this container). `2.28` was measured, not guessed: `objdump -T` against Godot 4.7.1-stable's own
+officially shipped `linux_release.x86_64` export template (downloaded and checksum-verified against
+`tools/game_toolchain.lock`) shows `GLIBC_2.28` as its highest referenced symbol version — pinning the
+GDExtension to the same floor means it never demands a newer glibc than the engine itself already
+does. The resulting `.so`'s own highest referenced symbol is `GLIBC_2.16`, comfortably under that
+floor.
+
+**Every toolchain download inside `deps` is checksum-verified** (Zig, `task`, `uv`, all
+`curl -fsSL ... | sha256sum -c -` against this repo's own `.tool-versions` pins) and the base image is
+pinned by digest, not just tag — matching this repo's existing `tools/game_toolchain.lock` convention
+rather than an unverified `curl | sh` install. `scons` is installed via `pipx`, matching
+`.tool-versions`' `pipx:scons` entry.
+
+**AC#1's cross-host claim ("identical output from macOS or Linux") is verified by construction**,
+detailed in full in [[decision-028]]: `mini` (the only macOS host available here) has no Docker
+installed, so a literal same-build-on-two-real-hosts test wasn't possible. What was actually run: the
+`artifacts` stage built twice independently, and the two resulting `.so` files are byte-identical
+(`sha256sum` match exactly). The pinned digest, checksummed downloads, and absence of any
+host-arch-conditional `RUN` step are what make that guarantee hold across host OSes too, not just
+across repeat runs on this one.
