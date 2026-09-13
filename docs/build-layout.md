@@ -922,3 +922,66 @@ signature gained an optional `on_tick: Callable = Callable()` parameter (called 
 No entry in `backlog/decisions/` was needed: this task enforces existing architectural rules rather than
 introducing new `reference/snake.html`-observable behavior — [[decision-018]]'s "audio is purely
 additive" reasoning applies here exactly as it did to TASK-039/040.
+
+## `game/platform/save_store.gd` + `game/platform/keybind_codec.gd` + `game/presentation/board/fx_state.gd` + `game/presentation/screens/settings_panel.gd` (TASK-042)
+
+Adds a settings screen and three accessibility/QoL features the oracle never had: per-bus volume
+(AC#1), a reduce-flash gate (AC#2), and keybind rebinding (AC#3).
+
+**`SaveStore`'s v3 schema (AC#1, AC#3).** `SCHEMA_VERSION` moved 2 → 3, adding a `settings` block
+(`volume_db: Dictionary` keyed by `AUDIO_BUSES := ["Master", "Music", "SFX", "UI"]`, `reduce_flash:
+bool`, `keybinds: Dictionary` keyed by `InputDefaults` action names) alongside the existing
+`best_scores`/`last_mode`. `_migrate_v2_to_v3()` carries `best_scores`/`last_mode` forward unchanged
+and fills `settings` with `_default_settings()` — a v2 save has no opinion on volume/flash/keybinds,
+so a fresh default is the only sound migration, not an attempt to infer one from absence.
+`_normalize_settings()` applies the same "explicit defaults, not absence-means-default" rule
+`_normalize_v3()` already applies to `best_scores`: any bus or action missing from a hand-edited or
+older save (including a v3 save written before a new action existed) falls back to its default rather
+than leaving `SettingsPanel`/`GameScreen` to guess. `KeybindCodec.default_keybinds()` is the single
+source of truth for which actions get a keybind entry, so `SaveStore` never hardcodes the action list
+itself.
+
+**`KeybindCodec` (`game/platform/keybind_codec.gd`, AC#3).** Encodes a rebound key as
+`"key:" + OS.get_keycode_string(keycode)` rather than serializing the `InputEventKey` itself — the
+task's own AC#3 requirement, so a save file survives a future Godot engine/input-system version change
+even if `InputEvent`'s internal shape doesn't. `decode()` reverses this via
+`OS.find_keycode_from_string()`, returning `KEY_NONE` for a malformed or unrecognized string rather
+than throwing, so a corrupted save degrades to "unbound" instead of failing to load.
+`apply_to_input_map(keybinds)` is the only place that touches the live `InputMap`: it erases each
+action's existing events (`InputMap.action_erase_events`) and re-adds one built from the decoded
+keycode, using `physical_keycode` (not `keycode`) to match the layout-independent convention
+`project.godot`/`InputDefaults.ACTION_PHYSICAL_KEYCODES` already established.
+
+**`FxState.reduce_flash` (`game/presentation/board/fx_state.gd`, AC#2).** A `reduce_flash: bool` field
+gates both `burst()` (particles + flash, the eat/die effect) and a new `trigger_flash()` method
+(flash-only, used directly by `GameScreen`'s die branch instead of assigning the flash timer inline).
+When `true`, both become no-ops — the accessibility rationale (photosensitivity) is recorded in
+[[decision-016]], which already covered the flash effect itself; this task only adds the toggle that
+gates it, not a new behavior needing its own decision entry.
+
+**`SettingsPanel` (`game/presentation/screens/settings_panel.gd`, AC#1/AC#2/AC#3).** A pure-presentation
+`Control`, built in code rather than a `.tscn` — matching `OverlayPanel`/`BoardView`'s code-first
+convention, this repo's only precedent for a hand-authored node tree. Owns per-bus `HSlider`s, a
+reduce-flash `CheckBox`, and one rebind `Button` per `InputDefaults.ACTION_PHYSICAL_KEYCODES` action;
+`set_settings()` seeds all three from a loaded save using `set_value_no_signal`/
+`set_pressed_no_signal` so applying a load doesn't re-emit every value as a user edit. It only edits
+values and emits `volume_changed`/`reduce_flash_changed`/`keybind_changed`/`closed` — mirroring how
+`OverlayPanel` emits `action_pressed`/`mode_selected` without knowing what `GameScreen` does with them.
+Rebinding is two-step: `_on_rebind_pressed(action)` arms `_listening_action` and shows "Press a
+key...", then the next `InputEventKey` in `_unhandled_key_input()` is captured by `_capture_key()` (a
+separate method so a test can drive a rebind directly with a synthetic event, bypassing the scene
+tree's real input pipeline) and encoded via `KeybindCodec.encode()`.
+
+**Wiring (`GameScreen`, `OverlayPanel`).** `OverlayPanel` gained a persistent "Settings" button
+(`settings_requested` signal) alongside its existing title/sub/mode-select/action controls — visible
+whenever the overlay itself is (menu, paused, dead), hidden while playing, with no per-screen toggle
+needed. `GameScreen` owns the `SettingsPanel` instance, connects all four of its signals, and adds a
+`_settings_open` guard to `_refresh_screen()` so the normal overlay-visibility logic doesn't fight the
+settings screen while it's open. `_apply_settings(settings)` is the one place that pushes a settings
+dict into the live systems it governs (`AudioServer.set_bus_volume_db` per bus,
+`board_view.fx.reduce_flash`, `KeybindCodec.apply_to_input_map`) — called once at startup from the
+loaded save, and again after every change signal, immediately followed by `save_store.save()`.
+
+No entry in `backlog/decisions/` was needed beyond the pre-existing [[decision-016]] (reduce-flash
+rationale): volume persistence and the keybind stable-string format are both directly specified by the
+task's own AC text, not new judgment calls needing a record of their own.

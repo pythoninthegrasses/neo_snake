@@ -11,7 +11,7 @@ extends RefCounted
 ## only how).
 
 const FILE_NAME := "save.json"
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 
 ## v2 defaults mirror content/tuning.json's scoring.best_score_defaults
 ## and content/modes.json's default_mode. Hardcoded rather than loaded via
@@ -19,6 +19,14 @@ const SCHEMA_VERSION := 2
 ## save/load -- this is deliberately a self-contained file-I/O primitive.
 const DEFAULT_BEST_SCORES := {"wall": 0, "wrap": 0}
 const DEFAULT_MODE := "wall"
+
+## v3 (TASK-042): per-bus volume in dB (0.0 = unity gain, AudioServer's own
+## default), reduce-flash off, and keybinds seeded from InputDefaults via
+## KeybindCodec so a fresh save always has an explicit binding per action --
+## the same "explicit defaults, not absence-means-default" convention
+## DEFAULT_BEST_SCORES already established.
+const AUDIO_BUSES := ["Master", "Music", "SFX", "UI"]
+const DEFAULT_REDUCE_FLASH := false
 
 var _base_dir: String
 ## version -> Callable(Dictionary) -> Dictionary, taking that version's
@@ -28,7 +36,10 @@ var _migrations: Dictionary
 
 func _init(base_dir: String = "user://") -> void:
 	_base_dir = base_dir
-	_migrations = {1: Callable(self, "_migrate_v1_to_v2")}
+	_migrations = {
+		1: Callable(self, "_migrate_v1_to_v2"),
+		2: Callable(self, "_migrate_v2_to_v3"),
+	}
 
 func _dst_path() -> String:
 	return _base_dir.path_join(FILE_NAME)
@@ -39,11 +50,22 @@ func _tmp_path() -> String:
 func _bak_path() -> String:
 	return _dst_path() + ".bak"
 
-static func _default_v2() -> Dictionary:
+static func _default_settings() -> Dictionary:
+	var volume_db := {}
+	for bus in AUDIO_BUSES:
+		volume_db[bus] = 0.0
+	return {
+		"volume_db": volume_db,
+		"reduce_flash": DEFAULT_REDUCE_FLASH,
+		"keybinds": KeybindCodec.default_keybinds(),
+	}
+
+static func _default_v3() -> Dictionary:
 	return {
 		"version": SCHEMA_VERSION,
 		"best_scores": DEFAULT_BEST_SCORES.duplicate(),
 		"last_mode": DEFAULT_MODE,
+		"settings": _default_settings(),
 	}
 
 func _migrate_v1_to_v2(data: Dictionary) -> Dictionary:
@@ -55,27 +77,55 @@ func _migrate_v1_to_v2(data: Dictionary) -> Dictionary:
 		"last_mode": DEFAULT_MODE,
 	}
 
+func _migrate_v2_to_v3(data: Dictionary) -> Dictionary:
+	return {
+		"version": 3,
+		"best_scores": data.get("best_scores", DEFAULT_BEST_SCORES.duplicate()),
+		"last_mode": data.get("last_mode", DEFAULT_MODE),
+		"settings": _default_settings(),
+	}
+
 func _migrate(data: Dictionary) -> Dictionary:
 	var version: int = int(data.get("version", 0))
 	while version < SCHEMA_VERSION:
 		if not _migrations.has(version):
-			return _default_v2()
+			return _default_v3()
 		data = _migrations[version].call(data)
 		version = int(data.get("version", 0))
-	return _normalize_v2(data)
+	return _normalize_v3(data)
 
 ## JSON numbers always decode as TYPE_FLOAT in Godot (same caveat
 ## content/loader.gd documents), but best_scores are conceptually ints --
-## normalize on the way out so callers never have to re-cast.
-static func _normalize_v2(data: Dictionary) -> Dictionary:
+## normalize on the way out so callers never have to re-cast. Settings are
+## normalized the same defensive way: any bus/action missing from a
+## hand-edited or older save falls back to its explicit default rather than
+## leaving a caller to guess.
+static func _normalize_v3(data: Dictionary) -> Dictionary:
 	var best_scores: Dictionary = data.get("best_scores", DEFAULT_BEST_SCORES.duplicate())
 	var normalized_scores := {}
 	for mode: String in best_scores:
 		normalized_scores[mode] = int(best_scores[mode])
 	return {
-		"version": 2,
+		"version": 3,
 		"best_scores": normalized_scores,
 		"last_mode": str(data.get("last_mode", DEFAULT_MODE)),
+		"settings": _normalize_settings(data.get("settings", {})),
+	}
+
+static func _normalize_settings(settings: Dictionary) -> Dictionary:
+	var defaults := _default_settings()
+	var volume_db: Dictionary = settings.get("volume_db", {})
+	var normalized_volume := {}
+	for bus in AUDIO_BUSES:
+		normalized_volume[bus] = float(volume_db[bus]) if volume_db.has(bus) else defaults.volume_db[bus]
+	var keybinds: Dictionary = settings.get("keybinds", {})
+	var normalized_keybinds := {}
+	for action: String in defaults.keybinds:
+		normalized_keybinds[action] = keybinds[action] if keybinds.has(action) else defaults.keybinds[action]
+	return {
+		"volume_db": normalized_volume,
+		"reduce_flash": bool(settings.get("reduce_flash", DEFAULT_REDUCE_FLASH)),
+		"keybinds": normalized_keybinds,
 	}
 
 static func _read_json_file(path: String) -> Dictionary:
@@ -102,7 +152,7 @@ func load_or_default() -> Dictionary:
 	if data.is_empty():
 		data = _read_json_file(_bak_path())
 	if data.is_empty():
-		return _default_v2()
+		return _default_v3()
 	return _migrate(data)
 
 ## Atomic tmp -> bak -> dst rotation (three steps, not a direct

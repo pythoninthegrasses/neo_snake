@@ -12,6 +12,10 @@ extends RefCounted
 
 var particles: Array[Dictionary] = []
 var flash: float = 0.0
+## TASK-042 AC#2: when true, burst()/trigger_flash() both no-op -- the
+## reduce-flash accessibility gate decision-016 calls for, suppressing the
+## particle/flash effects reference/snake.html applies unconditionally.
+var reduce_flash: bool = false
 var _rng_state: int
 
 func _init(prng_seed: int = int(Time.get_ticks_usec())) -> void:
@@ -27,6 +31,8 @@ func _next_unit_float() -> float:
 ## tuning: game/content/tuning.json's "particles"/"flash" sections.
 ## hues: game/content/palette.json's board.particle_hues (two hex strings).
 func burst(cell_x: int, cell_y: int, tuning: Dictionary, hues: Array) -> void:
+	if reduce_flash:
+		return
 	var count: int = tuning.particles.burst_count
 	var speed_min: float = tuning.particles.speed_min
 	var speed_max: float = tuning.particles.speed_max
@@ -39,6 +45,14 @@ func burst(cell_x: int, cell_y: int, tuning: Dictionary, hues: Array) -> void:
 			"life": 1.0,
 			"hue": hues[0] if _next_unit_float() < 0.5 else hues[1],
 		})
+	flash = 1.0
+
+## Callers that set flash directly for a reason other than burst() (e.g.
+## GameScreen's death flash) route through here so reduce_flash gates them
+## too, rather than assigning fx.flash = 1.0 straight from outside.
+func trigger_flash() -> void:
+	if reduce_flash:
+		return
 	flash = 1.0
 
 func decay(dt_ms: float, tuning: Dictionary) -> void:

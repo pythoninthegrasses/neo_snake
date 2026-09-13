@@ -50,6 +50,7 @@ var world: SimulationWorld
 var board_view: BoardView
 var hud: Hud
 var overlay: OverlayPanel
+var settings_panel: SettingsPanel
 var input_router: InputRouter
 var app_lifecycle: AppLifecycle
 var save_store: SaveStore
@@ -63,6 +64,7 @@ var _current_mode_id := ""
 var _paused := false
 var _is_win := false
 var _save_data: Dictionary
+var _settings_open := false
 
 func _ready() -> void:
 	var content := ContentLoader.load_all()
@@ -90,6 +92,7 @@ func _ready() -> void:
 	board_view.position = Vector2(0, 0)
 	board_view.setup(world, _tuning, _palette)
 	add_child(board_view)
+	_apply_settings(_save_data.settings)
 
 	hud = Hud.new()
 	hud.position = Vector2(0, board_view.size.y)
@@ -102,6 +105,18 @@ func _ready() -> void:
 	overlay.set_modes(_modes, _current_mode_id)
 	overlay.action_pressed.connect(_on_overlay_action_pressed)
 	overlay.mode_selected.connect(_on_mode_selected)
+	overlay.settings_requested.connect(_on_settings_requested)
+
+	settings_panel = SettingsPanel.new()
+	settings_panel.position = board_view.position
+	settings_panel.size = board_view.size
+	settings_panel.visible = false
+	add_child(settings_panel)
+	settings_panel.set_settings(_save_data.settings)
+	settings_panel.volume_changed.connect(_on_volume_changed)
+	settings_panel.reduce_flash_changed.connect(_on_reduce_flash_changed)
+	settings_panel.keybind_changed.connect(_on_keybind_changed)
+	settings_panel.closed.connect(_on_settings_closed)
 
 	input_router = InputRouter.new()
 	input_router.direction_queued.connect(_on_direction_queued)
@@ -172,7 +187,7 @@ func _process(delta: float) -> void:
 						board_view.notify_eat(pre_food_x, pre_food_y)
 				SimulationWorld.EVENT_DIE:
 					_is_win = false
-					board_view.fx.flash = 1.0
+					board_view.fx.trigger_flash()
 				SimulationWorld.EVENT_WIN:
 					_is_win = true
 		# Catch-up coalescing is presentation policy, not simulation policy
@@ -203,6 +218,8 @@ func _refresh_screen() -> void:
 
 	hud.update(view.score, best, screen.capitalize())
 
+	if _settings_open:
+		return
 	if screen == GameScreenState.SCREEN_PLAYING:
 		overlay.configure({})
 		return
@@ -304,3 +321,40 @@ func _on_focus_lost() -> void:
 	if view.result == SimulationWorld.OK and view.status == BoardGeometry.STATUS_PLAYING and not _paused:
 		_paused = true
 		_refresh_screen()
+
+## Applies a loaded settings dict (TASK-042) to the live systems it governs
+## -- AudioServer bus volume, the fx reduce-flash gate, and the InputMap --
+## called once at startup and again whenever settings_panel emits a change,
+## so the running game always reflects what SaveStore has on disk.
+func _apply_settings(settings: Dictionary) -> void:
+	for bus: String in SaveStore.AUDIO_BUSES:
+		var bus_idx := AudioServer.get_bus_index(bus)
+		if bus_idx >= 0:
+			AudioServer.set_bus_volume_db(bus_idx, settings.volume_db[bus])
+	board_view.fx.reduce_flash = settings.reduce_flash
+	KeybindCodec.apply_to_input_map(settings.keybinds)
+
+func _on_settings_requested() -> void:
+	_settings_open = true
+	overlay.visible = false
+	settings_panel.visible = true
+
+func _on_settings_closed() -> void:
+	_settings_open = false
+	settings_panel.visible = false
+	_refresh_screen()
+
+func _on_volume_changed(bus: String, db: float) -> void:
+	_save_data.settings.volume_db[bus] = db
+	_apply_settings(_save_data.settings)
+	save_store.save(_save_data)
+
+func _on_reduce_flash_changed(enabled: bool) -> void:
+	_save_data.settings.reduce_flash = enabled
+	_apply_settings(_save_data.settings)
+	save_store.save(_save_data)
+
+func _on_keybind_changed(action: String, encoded: String) -> void:
+	_save_data.settings.keybinds[action] = [encoded]
+	_apply_settings(_save_data.settings)
+	save_store.save(_save_data)
