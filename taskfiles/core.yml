@@ -58,11 +58,23 @@ tasks:
       only Zig file in the project allowed to `export` (AC #2), and this is
       the mechanical check that nothing besides its intended ns_* surface
       leaked into the library's global symbol table.
+
+      ZIG_TARGET_FLAG (optional, e.g. "-Dtarget=aarch64-macos") lets a
+      caller cross/native-pin the build explicitly (extension:build-macos,
+      TASK-043); left empty it's zig's own default native-target build,
+      unchanged from before TASK-043.
     dir: core
+    vars:
+      ZIG_TARGET_FLAG: '{{.ZIG_TARGET_FLAG | default ""}}'
     cmds:
-      - zig build abi
+      - zig build abi {{.ZIG_TARGET_FLAG}}
       - |
-        bad=$(nm -g --defined-only zig-out/lib/libneo_snake.a | awk '{print $3}' | grep -vE '^ns_' || true)
+        # Mach-O's nm always prepends "_" to every exported C symbol (a
+        # platform ABI convention, e.g. ns_body_copy -> _ns_body_copy on
+        # darwin); ELF's nm does not. Accept the optional underscore so this
+        # check verifies the same ns_* naming guarantee on both platforms
+        # rather than only on Linux.
+        bad=$(nm -g --defined-only zig-out/lib/libneo_snake.a | awk '{print $3}' | grep -vE '^_?ns_' || true)
         if [ -n "$bad" ]; then
           echo "Unexpected exported symbols in libneo_snake.a:" >&2
           echo "$bad" >&2

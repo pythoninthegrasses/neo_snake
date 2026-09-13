@@ -14,7 +14,43 @@ tasks:
       rebuilt core lib triggers a relink, unlike a bare -lneo_snake flag),
       and produces game/bin/libneo_snake<suffix><SHLIBSUFFIX> — the shared
       library game/bin/neo_snake.gdextension (TASK-027) will point to.
+
+      Gated platforms: [linux] (TASK-043): a bare `scons` on macOS defaults
+      to arch=universal (x86_64 + arm64), but core/zig-out/lib/libneo_snake.a
+      is single-arch (whatever `zig build abi` natively targets) -- linking
+      universal against it fails with "symbol(s) not found for architecture
+      x86_64". extension:build-macos is the macOS-specific replacement,
+      pinning arch=arm64 explicitly for both targets.
+    platforms: [linux]
     dir: extension
     cmds:
       - task: :core:abi-symbols
       - scons
+
+  build-macos:
+    desc: "Build the macOS (darwin/arm64) framework-bundle GDExtension via scons, for both debug and release targets (TASK-043)"
+    summary: |
+      task extension:build-macos
+
+      macOS-only counterpart to extension:build. Rebuilds
+      core/zig-out/lib/libneo_snake.a pinned to -Dtarget=aarch64-macos
+      (native on this host, so the pin is explicit rather than
+      load-bearing), then runs scons twice inside extension/
+      (platform=macos arch=arm64, once per target=template_debug and
+      target=template_release) so extension/SConstruct's macOS branch
+      produces both
+      game/bin/libneo_snake.macos.template_debug.framework/ and
+      .../template_release.framework/ bundles, matching
+      game/bin/neo_snake.gdextension's macos.debug/macos.release keys.
+
+      Gated platforms: [darwin/arm64] (see taskfiles/parity.yml's
+      platforms: [linux] precedent) so `task check` on any other host
+      silently skips this instead of attempting a cross build.
+    platforms: [darwin/arm64]
+    dir: extension
+    cmds:
+      - task: :core:abi-symbols
+        vars:
+          ZIG_TARGET_FLAG: "-Dtarget=aarch64-macos"
+      - scons platform=macos arch=arm64 target=template_debug
+      - scons platform=macos arch=arm64 target=template_release

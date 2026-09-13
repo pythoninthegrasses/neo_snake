@@ -985,3 +985,35 @@ loaded save, and again after every change signal, immediately followed by `save_
 No entry in `backlog/decisions/` was needed beyond the pre-existing [[decision-016]] (reduce-flash
 rationale): volume persistence and the keybind stable-string format are both directly specified by the
 task's own AC text, not new judgment calls needing a record of their own.
+
+## Native macOS arm64 build ([[decision-026]], TASK-043)
+
+`task check` runs fully green natively on darwin/arm64 (AC#1), including Tier-D, producing
+`game/bin/libneo_snake.macos.template_debug.framework/` and `.../template_release.framework/`
+bundles matching `game/bin/neo_snake.gdextension`'s `macos.debug`/`macos.release` keys (AC#2). Three
+build/tooling gaps only surface when actually building on macOS rather than cross-compiling from
+Linux — all three are covered in detail, including the exact failure output and numeric bounds, by
+[[decision-026]]; this section only summarizes what changed and where.
+
+**`extension/SConstruct`** appends `-Wl,-ld_classic` to `LINKFLAGS` inside its
+`env["platform"] == "macos"` branch (immediately before the framework-bundle packaging code already
+described above), working around Apple's newer default linker ("ld-prime", Xcode 26+) rejecting
+`core/zig-out/lib/libneo_snake.a` at final-link time over Mach-O archive-member alignment. Linux is
+unaffected — this branch never executes there.
+
+**`taskfiles/extension.yml`'s `build:` task is gated `platforms: [linux]`**, alongside the
+pre-existing `build-macos:` task (`platforms: [darwin/arm64]`). A bare `scons` invocation defaults
+`arch=universal` on macOS, which cannot link against the single-arch `libneo_snake.a` `zig build abi`
+produces there — `extension:build-macos` already pins `arch=arm64` explicitly for both
+`template_debug` and `template_release` and is the sole macOS path in `task check`.
+
+**`taskfiles/audio.yml`'s `music-check:` task is gated `platforms: [linux]`.** Furnace's synthesis is
+cross-platform deterministic, but the OGG Vorbis encode step is not bit-exact across
+platforms/builds, so the committed `.ogg`'s exact-sample-equality check only holds on the platform
+that asset was actually rendered on (Linux). `audio:check` (SFX, WAV, byte-exact) is unaffected and
+still runs on every platform.
+
+Confirmed end to end on a real Apple Silicon host (Xcode 26.6): `task check` reaches
+`audio:music-check`, which silently no-ops per go-task's `platforms:` allow-list semantics, and the
+whole chain exits 0 — 119/119 gdUnit4 test cases, both framework bundles built, no step skipped that
+wasn't deliberately gated.

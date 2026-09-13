@@ -12,12 +12,17 @@
 customs = [File("custom.py").srcnode().abspath]
 env = SConscript("../third_party/godot-cpp/SConstruct", {"api_version": "4.7", "customs": customs})
 
-# godot-cpp's own generated-bindings object count blows past this system's
+# godot-cpp's own generated-bindings object count blows past Linux's
 # ARG_MAX for a bare `ar` invocation ("Argument list too long"); godot-cpp's
 # own web.py platform hits the same wall and works around it the same way,
 # via the same two-line ARCOM_POSIX + TEMPFILE(ARCOM_POSIX) pair (tools/web.py).
-env["ARCOM_POSIX"] = env["ARCOM"].replace("$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
-env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"
+# macOS's default ARG_MAX is large enough that the same object list never
+# hits the wall, and its BSD `ar` doesn't accept GNU ar's response-file
+# invocation this pair produces (TASK-043) -- so only apply it where it's
+# actually load-bearing.
+if env["platform"] != "macos":
+    env["ARCOM_POSIX"] = env["ARCOM"].replace("$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
+    env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"
 
 env.Append(CPPPATH=["src/", "../include"])
 sources = Glob("src/*.cpp")
@@ -32,10 +37,40 @@ env.Append(LIBS=[core_lib])
 # (env["suffix"] already encodes platform/target/arch/.nothreads); game/bin/ is
 # where game/bin/neo_snake.gdextension (TASK-027) points its per-platform
 # [libraries] entries.
-library = env.SharedLibrary(
-    "../game/bin/libneo_snake{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
-    source=sources,
-)
+#
+# macOS (TASK-043) is the one platform where the .gdextension's [libraries]
+# entry (macos.debug/macos.release, see game/bin/neo_snake.gdextension) names
+# a *.framework directory with no arch suffix, not a flat .dylib -- godot-cpp's
+# own env["suffix"] always appends arch (tools/godotcpp.py), and neither
+# godot-cpp nor Godot's own docs (gdextension_cpp_example.rst) do any
+# framework-bundle packaging for the extension's own primary library, so this
+# repo's SConstruct builds the bundle directly: a directory literally named
+# "libneo_snake.macos.<target>.framework" containing one flat Mach-O binary of
+# the same name (minus the .framework suffix) -- the same shape godot-cpp's
+# own test/SConstruct uses, no Contents/Info.plist nesting required for a
+# GDExtension's own primary library (that nesting is only for a *dependency*
+# framework per gdextension_file.rst's Contents/Frameworks convention).
+if env["platform"] == "macos":
+    # Apple's newer default linker (ld-prime, Xcode 26+) enforces 8-byte
+    # alignment on every Mach-O archive member; Zig's own archiver (which
+    # produces core/zig-out/lib/libneo_snake.a via `zig build abi`) doesn't
+    # satisfy that for at least one member, failing this final link step
+    # with "not 8-byte aligned in ... libneo_snake.a" (TASK-043). The older
+    # `ld_classic` linker (still shipped, `-Wl,-ld_classic`, deprecated but
+    # functional) doesn't enforce this and links the same archive cleanly --
+    # confirmed directly against the real archive on Xcode 26.6/mini before
+    # applying this flag.
+    env.Append(LINKFLAGS=["-Wl,-ld_classic"])
+    bundle_name = "libneo_snake.macos.{}.framework".format(env["target"])
+    library = env.SharedLibrary(
+        "../game/bin/{}/{}".format(bundle_name, bundle_name.removesuffix(".framework")),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "../game/bin/libneo_snake{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
 env.Depends(library, core_lib)
 
 Default(library)

@@ -67,6 +67,7 @@ tasks:
       - task: core:abitest
       - task: core:difftest
       - task: extension:build
+      - task: extension:build-macos
       - task: game:boundary-check
       - task: game:import
       - task: game:test
