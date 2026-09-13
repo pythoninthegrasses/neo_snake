@@ -36,3 +36,24 @@ func test_decay_removes_particles_once_their_life_expires() -> void:
 	assert_int(fx.particles.size()).is_equal(14)
 	fx.decay(100000.0, TUNING)
 	assert_int(fx.particles.size()).is_equal(0)
+
+
+func test_reduce_flash_suppresses_burst_entirely() -> void:
+	var fx := FxState.new(1)
+	fx.reduce_flash = true
+	fx.burst(3, 4, TUNING, HUES)
+	assert_int(fx.particles.size()).is_equal(0)
+	assert_float(fx.flash).is_equal_approx(0.0, 0.0001)
+
+
+func test_reduce_flash_suppresses_trigger_flash() -> void:
+	var fx := FxState.new()
+	fx.reduce_flash = true
+	fx.trigger_flash()
+	assert_float(fx.flash).is_equal_approx(0.0, 0.0001)
+
+
+func test_trigger_flash_sets_flash_when_not_reduced() -> void:
+	var fx := FxState.new()
+	fx.trigger_flash()
+	assert_float(fx.flash).is_equal_approx(1.0, 0.0001)

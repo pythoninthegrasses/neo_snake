@@ -18,11 +18,13 @@ extends Control
 
 signal action_pressed
 signal mode_selected(mode_id: String)
+signal settings_requested
 
 var _title_label := Label.new()
 var _sub_label := Label.new()
 var _mode_select := OptionButton.new()
 var _action_button := Button.new()
+var _settings_button := Button.new()
 var _mode_ids: Array[String] = []
 
 func _ready() -> void:
@@ -32,8 +34,11 @@ func _ready() -> void:
 	box.add_child(_sub_label)
 	box.add_child(_mode_select)
 	box.add_child(_action_button)
+	_settings_button.text = "Settings"
+	box.add_child(_settings_button)
 	_action_button.pressed.connect(func() -> void: action_pressed.emit())
 	_mode_select.item_selected.connect(_on_item_selected)
+	_settings_button.pressed.connect(func() -> void: settings_requested.emit())
 
 func _on_item_selected(index: int) -> void:
 	mode_selected.emit(_mode_ids[index])
