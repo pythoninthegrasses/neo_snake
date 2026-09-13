@@ -30,6 +30,8 @@ includes:
     taskfile: ./taskfiles/extension.yml
   parity:
     taskfile: ./taskfiles/parity.yml
+  audio:
+    taskfile: ./taskfiles/audio.yml
 
 tasks:
   default:
@@ -67,3 +69,4 @@ tasks:
       - task: game:boundary-check
       - task: game:import
       - task: game:test
+      - task: audio:check

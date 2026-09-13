@@ -668,3 +668,45 @@ or "a documented separate task" — this follows `oracle:fuzz`'s existing preced
 taskfile target deliberately excluded from `check`) rather than the former, since the suite requires
 `sway`/`wtype`/`grim`/`firefox` (Linux + Wayland only, per `platforms: [linux]` on the task) and
 produces screenshots for manual review rather than a hermetic pass/fail result `check` could gate on.
+
+## `tools/render_audio.py` + `taskfiles/audio.yml` (TASK-038)
+
+Renders text-source SFX patches (`audio/src/sfx/*.chip.json`) to 16-bit mono WAV using only the
+Python stdlib (`wave`, `struct`, `math`, `json`) — no third-party audio dependency, matching the
+`uv run --script` + PEP 723 inline-metadata convention already used by
+`tools/validate_simulation_boundary.py`.
+
+**Patch schema (`schema_version: 1`).** A patch names a `sample_rate`, a `duration_ms`, a `waveform`
+(`square` | `triangle` | `noise`), an optional `duty` (square only, default `0.5`), and two
+piecewise-linear breakpoint envelopes over time: `pitch_hz` and `volume`. Both envelopes are
+`[[time_ms, value], ...]` lists starting at `t=0`, interpolated linearly between points and held flat
+before the first / after the last — enough expressiveness for the eight short cues TASK-039 needs
+(a pitch sweep for `eat`'s upward chirp or `die`'s descending noise decay, an amplitude envelope for
+attack/decay shaping) without the extra parameters (vibrato, arpeggio, bit-crush) a general chiptune
+tracker format would carry and this repo doesn't need. `noise` clocks a fixed-seed 15-bit Galois LFSR
+(NES-APU-style) once per pitch-phase wrap rather than drawing from the platform RNG, so a patch's
+rendered bytes depend only on its own JSON content.
+
+**Why this guarantees byte-reproducibility (AC#2).** Nothing in the render path reads wall-clock time,
+a random seed, or dict/set iteration order — every input is walked as an explicit sample-index loop
+over IEEE-754 double arithmetic, which is deterministic given the same code and inputs. `--self-test`
+renders an embedded fixture patch twice into in-memory buffers and asserts the bytes are identical;
+`task audio:check` runs this before anything else.
+
+**`task audio:render` vs. `task audio:check`.** `render` regenerates `audio/build/sfx/*.wav` from
+every `audio/src/sfx/*.chip.json` — run this after authoring or editing a patch, then commit the WAV
+alongside it (TASK-039 AC#2). `check` re-renders every patch into memory and diffs it byte-for-byte
+against the committed WAV, failing loudly on any mismatch (a stale committed WAV that no longer
+matches its source), and passes trivially when zero patches exist yet (true today — TASK-039 is what
+actually populates `audio/src/sfx/`).
+
+**Why this *is* wired into `task check`, unlike `parity:capture` or `oracle:fuzz`.** Both of those are
+excluded for a concrete environmental reason (a GUI/Wayland dependency, or being open-ended discovery
+rather than regression). `audio:check` is pure stdlib Python with no such dependency — the same
+`uv`+Python 3.13 toolchain `game:boundary-check` and `core:abitest-purity` already require — so there's
+no reason to keep it out of the one documented gate; `check:`'s command chain now ends with
+`audio:check`.
+
+No entry in `backlog/decisions/` was needed for this task: [[decision-018]] already establishes that
+`reference/snake.html` has no audio to diverge from, so there is no oracle-behavior deviation to
+record here — only new, purely-additive build tooling.
