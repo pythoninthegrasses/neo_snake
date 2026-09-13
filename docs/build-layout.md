@@ -778,3 +778,87 @@ real listen-through before calling this fully done.
 
 No entry in `backlog/decisions/` was needed: audio remains purely additive per [[decision-018]], and
 the `DEFAULT_OUT_DIR` move is a build-tooling detail, not a `reference/snake.html` behavior deviation.
+
+## `tools/render_music.py` + `audio/src/music/*.fur` + `game/presentation/audio/music_player.gd` (TASK-040)
+
+Adds a tracker-authored music master, rendered offline to a committed OGG, and an audio bus layout
+(`Master -> Music / SFX / UI`) that both the existing SFX cues and the new music track route through.
+
+**Furnace, not a hand-rolled synth.** TASK-038/039's `render_audio.py` hand-synthesizes short SFX
+patches directly in Python — fine for eight one-shot cues, but composing a full melodic track sample-
+by-sample in the same style would be a real tracker's job done badly by hand. Instead this task pins
+[Furnace](https://github.com/tildearrow/furnace) (`tools/game_toolchain.lock`: `FURNACE_VERSION`,
+checksum-verified Linux tarball / macOS DMG URLs, same pattern as the Godot fallback binary above) and
+authors `audio/src/music/theme.fur` against Furnace's own public `.fur` format spec — never by copying,
+cloning, or lightly editing any of Furnace's own bundled demo songs, which its own `demos/README.md`
+states are third-party copyrighted, not GPL like the tracker itself.
+
+**Bootstrap and dispatch mirror Godot's, generalized.** `tools/toolchain.py`'s `godot_xdg_env()` became
+`game_tools_xdg_env()` (the XDG sandbox-redirect trick isn't Godot-specific) and gained
+`furnace_binary_path()`. `tools/bootstrap.py game furnace` downloads and extracts the Linux tarball (or
+mounts/copies the macOS DMG — Furnace, unlike Godot, ships no macOS zip alternative, so the DMG path
+uses `hdiutil attach`/`detach` and is untested on this Linux sandbox) to `.tools/game/furnace/` (already
+covered by the existing `/.tools/*` `.gitignore` entry). `tools/run.py furnace [args...]` dispatches
+through the pinned binary exactly like `tools/run.py godot` does.
+
+**The render pipeline has two chained external steps, neither of them ffmpeg** (not installable on this
+host without an unconfigured system repo):
+
+1. The pinned `furnace` binary renders `.fur` to WAV via its built-in console/export mode:
+   `furnace -console -view nothing -loglevel warning -output out.wav -loops 0 in.fur`. This runs fully
+   headless — no Xvfb/X11 needed, unlike *interactive* Furnace authoring, which does need a GUI this
+   sandbox doesn't have (see "AC#3's manual check" below). `-safemode` cannot be combined with
+   `-console`/`-output` — Furnace refuses that combination outright — and `-loglevel` only accepts
+   `warning`, not `warn`.
+2. `soundfile` (the first non-stdlib Python dependency in this repo's tooling, declared via PEP 723
+   `dependencies = [...]` and run with `uv run --script`) re-encodes the WAV to OGG Vorbis — its bundled
+   libsndfile has Vorbis support compiled in, so no ffmpeg/oggenc/sox is needed either.
+
+**Ogg container non-determinism (a genuinely new finding, not assumed going in).** Two Furnace renders
+of the same `.fur` are byte-identical WAVs (`--self-test` proves this per-run). But two `soundfile` Ogg
+encodes of that *same* WAV are never byte-identical — libogg embeds a randomized per-logical-stream
+serial number in the container on every encode (confirmed: first byte difference at offset 15, the Ogg
+page header). The decoded PCM samples, however, are bit-identical across encodes (confirmed with
+`numpy.array_equal`, max abs diff `0.0`). So `--check` never diffs raw `.ogg` bytes — it decodes both
+the committed file and a fresh render with `soundfile` and compares the sample arrays.
+
+**`task audio:music-render` vs. `task audio:music-check`** (`taskfiles/audio.yml`) mirror
+`audio:render`/`audio:check`'s shape: `render` regenerates `game/content/audio/music/*.ogg` from every
+`audio/src/music/*.fur`; `check` runs `--self-test` then `--all --check`. Unlike `audio:check` (pure
+stdlib, no external binary), `music-check` requires the bootstrapped `furnace` binary — the same
+category of dependency `game:test` already has on the bootstrapped Godot binary, so it's wired into the
+main `check:` chain on that precedent rather than excluded the way `parity:capture`/`oracle:fuzz` are.
+
+**Bus layout (`game/default_bus_layout.tres`).** Godot auto-loads bus layouts from the fixed resource
+path `res://default_bus_layout.tres` with no `project.godot` entry required (confirmed via the Godot
+docs), so the three-bus layout (`Music`, `SFX`, `UI`, each sending to `Master`) lives at the project
+root rather than needing any project-settings edit. `SfxPlayer` splits its eight cues across two of the
+three buses: `ui_move`/`ui_confirm` (menu-navigation feedback) route to `UI`; the other six (in-game
+feedback: `eat`, `die`, `turn`, `start`, `pause`, `win`) route to `SFX`. This split is a new
+`SfxPlayer.UI_CUES` list, not a task requirement spelled out anywhere else — the bus layout only needed
+to exist and be routed to correctly, so this is the most natural interpretation of "UI" vs. "SFX" given
+the two categories of cue that already existed.
+
+**`MusicPlayer` (`game/presentation/audio/music_player.gd`).** `reference/snake.html` has no music at
+all, so unlike every SFX cue there is no oracle cue-point to match — the simplest correct design is a
+single `AudioStreamPlayer` on the `Music` bus, loaded with `game/content/audio/music/theme.ogg`
+(`loop = true` set on the `AudioStreamOggVorbis` resource), started once and left running continuously.
+`GameScreen` owns the one instance (`music`), added and started in `_ready()` alongside `sfx`. It is not
+gated on game status (menu/playing/paused/dead) — there's no reference behavior to derive a gating rule
+from, and continuous background music is the ordinary default for this genre absent a specific reason
+to stop it.
+
+**Testing (`game/tests/test_music_player.gd`).** Asserts the committed OGG loads a real stream, that the
+stream's `loop` flag is set, that the player's `bus` is `"Music"`, and that `play()`/`stop()` actually
+start/stop playback — the same headless proxy for "audibly triggered" `test_sfx_player.gd` already uses.
+
+**AC#3's manual check.** As with TASK-039, this sandbox reports no sound card (`aplay -l` finds none),
+so no by-ear confirmation was possible here. What was verified instead: the rendered track is
+non-silent (RMS≈4888) and non-clipping (peak 16383 of a 32767 ceiling), `~12.8s` long, and the
+`MusicPlayer`/bus-routing tests above confirm it actually starts on the `Music` bus. A human with
+working audio output should do a real listen-through (and confirm the loop point isn't audibly jarring)
+before calling this fully done.
+
+No entry in `backlog/decisions/` was needed: [[decision-018]] already establishes `reference/snake.html`
+has no audio to diverge from, so a music track and bus layout are purely additive, not a behavior
+deviation.

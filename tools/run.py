@@ -13,9 +13,15 @@ download under .tools/game/godot if that asset does not run headless on
 this platform. Execs directly (no subprocess wrapper) so interactive tools
 (the Godot editor) keep normal stdio/tty/signal behavior.
 
+Also dispatches the pinned Furnace tracker binary (TASK-040), bootstrapped
+by `tools/bootstrap.py game furnace` under .tools/game/furnace -- there is
+no mise/aqua package for Furnace, so unlike godot there is no
+system-package fallback to check first.
+
 Usage:
     ./tools/run.py godot [args...]
     ./tools/run.py godot --headless --version
+    ./tools/run.py furnace [args...]
 """
 
 import os
@@ -23,7 +29,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from toolchain import godot_fallback_binary_path, godot_xdg_env, load_pins, resolve_mise_godot  # noqa: E402
+from toolchain import (  # noqa: E402
+    furnace_binary_path,
+    game_tools_xdg_env,
+    godot_fallback_binary_path,
+    load_pins,
+    resolve_mise_godot,
+)
 
 
 def die(message: str) -> None:
@@ -40,14 +52,28 @@ def resolve_godot() -> Path:
     die("godot is not bootstrapped. Run ./tools/bootstrap.py game godot")
 
 
+def resolve_furnace() -> Path:
+    binary = furnace_binary_path(load_pins())
+    if os.access(binary, os.X_OK):
+        return binary
+    die("furnace is not bootstrapped. Run ./tools/bootstrap.py game furnace")
+
+
 def run_godot(args: list[str]) -> None:
     binary = resolve_godot()
-    os.environ.update(godot_xdg_env())
+    os.environ.update(game_tools_xdg_env())
+    os.execv(str(binary), [str(binary), *args])
+
+
+def run_furnace(args: list[str]) -> None:
+    binary = resolve_furnace()
+    os.environ.update(game_tools_xdg_env())
     os.execv(str(binary), [str(binary), *args])
 
 
 COMMANDS = {
     "godot": run_godot,
+    "furnace": run_furnace,
 }
 
 

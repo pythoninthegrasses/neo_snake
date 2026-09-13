@@ -70,3 +70,4 @@ tasks:
       - task: game:import
       - task: game:test
       - task: audio:check
+      - task: audio:music-check

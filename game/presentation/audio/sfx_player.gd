@@ -17,6 +17,10 @@ const CUES: Array[String] = [
 	"eat", "die", "turn", "start", "pause", "win", "ui_move", "ui_confirm",
 ]
 
+## UI-navigation cues route to the "UI" bus; every other cue is in-game
+## feedback and routes to "SFX" (TASK-040 bus layout: Master -> Music/SFX/UI).
+const UI_CUES: Array[String] = ["ui_move", "ui_confirm"]
+
 var _players := {}
 
 func _ready() -> void:
@@ -27,6 +31,7 @@ func _ready() -> void:
 			player.stream = load(path)
 		else:
 			push_error("SfxPlayer: missing cue %s" % path)
+		player.bus = "UI" if cue in UI_CUES else "SFX"
 		add_child(player)
 		_players[cue] = player
 
