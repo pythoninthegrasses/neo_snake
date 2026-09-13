@@ -862,3 +862,63 @@ before calling this fully done.
 No entry in `backlog/decisions/` was needed: [[decision-018]] already establishes `reference/snake.html`
 has no audio to diverge from, so a music track and bus layout are purely additive, not a behavior
 deviation.
+
+## `tools/validate_audio_boundary.py` + `AudioEventCoalescer` + `set_replaying()` (TASK-041)
+
+Enforces the three audio-uncoupling rules the milestone has been stating since TASK-039/040 but never
+actually mechanically checked: the core never knows audio exists, catch-up coalescing is presentation
+policy, and replay/rollback playback must be silent.
+
+**`tools/validate_audio_boundary.py` (AC#1).** A dedicated script, not an extension of
+`validate_simulation_boundary.py` (TASK-029, above) — that tool scans `.gd` files *outside*
+`game/simulation/` for sim-boundary violations, the opposite direction and file scope from what AC#1
+needs (audio tokens *inside* `include/neo_snake.h` and `core/*.zig`/`*.c`). Strips comments before
+scanning — `include/neo_snake.h` already carries one legitimate comment describing `ns_event`'s
+consumer as "e.g. audio, TASK-041", which must not itself trip the check — then greps the remaining
+code for `audio|sound|sfx|music` (case-insensitive, word-prefixed). Wired in as `core:audio-boundary-
+check` (`taskfiles/core.yml`), placed in `check:` right after `core:abi-header-check` and before
+`core:abi-symbols`, alongside the other cheap static core-boundary checks.
+
+**`AudioEventCoalescer` (`game/presentation/audio/audio_event_coalescer.gd`, AC#2).** `core/abi.zig`'s
+`ns_pump` loops `stepOneTick` while ticks remain in the frame's accumulator budget (up to
+`world.MAX_STEPS`), so a single `ns_pump` call after a hitch can genuinely advance several ticks at
+once, each eating tick pushing its own independent `NS_EVENT_EAT`. The pre-existing `GameScreen._process()`
+code called `sfx.play("eat")` once per drained event, so a six-tick catch-up frame would have played the
+eat cue six times — a real bug, not a hypothetical one. `AudioEventCoalescer.cues_for(events)` is a
+pure static helper (`class_name`, no Node dependency — the same testable-pure-helper pattern
+`GameScreenState`/`BoardGeometry` already established) that reduces a frame's event array to a
+`{"eat": bool, "die": bool, "win": bool}` dictionary; `GameScreen._process()` now calls `sfx.play()` at
+most once per cue per frame, gated on that result, instead of once per event. Die/win needed no
+coalescing logic of their own — `ns_pump`'s loop condition already includes `w.status == .playing`, so
+it stops the instant a tick transitions status to `.dead`, meaning at most one die/win event can ever
+appear in a single drain.
+
+Tested with synthetic event arrays (`game/tests/test_audio_event_coalescer.gd`) rather than driving a
+real catch-up hitch through `GameScreen`, on the same precedent TASK-039 already recorded above:
+forcing a specific food/snake state through `GameScreen._process()` needs test-harness machinery this
+repo doesn't have. A synthetic six-`EVENT_EAT` array is exactly what a real six-tick catch-up drain
+looks like at the point `AudioEventCoalescer` consumes it, so the pure-function test is a faithful
+proxy without inventing new state-forcing infrastructure.
+
+**`set_replaying(bool)` on `SfxPlayer`/`MusicPlayer` (AC#3).** Both players gained a `_replaying` flag
+and a `set_replaying(replaying)` setter; `play()`/`play(cue)` become a no-op while it's `true`. Lives on
+the presentation-layer players themselves, not on `core/*.zig`, per the same "core never knows audio
+exists" rule AC#1 enforces. No `GameScreen.set_replaying()` forwarding method was added: no rollback or
+replay driver exists yet in this codebase (deferred to TASK-051+ multiplayer work per
+`docs/canonical-state.md`), so a forwarding method with no caller would be speculative. The flag sits
+directly on `SfxPlayer`/`MusicPlayer`, ready for a future rollback driver to call.
+
+Verified two ways: direct unit tests on each player (`test_sfx_player.gd`, `test_music_player.gd`) confirm
+`play()` is suppressed while replaying and restored once it isn't; and a corpus-wide integration test
+(`test_corpus_replay.gd`, `test_set_replaying_true_suppresses_all_sfx_and_music_during_a_corpus_replay`)
+drives every corpus trace except `win-full-board` (not ABI-representable — see the existing
+`_replay()` skip logic) through the existing `_replay()` driver with both players held in replaying
+mode and an `on_tick` callback that unconditionally calls `sfx.play()`/`music.play()` per drained event
+(routed through `AudioEventCoalescer`), then asserts no `AudioStreamPlayer` in either player is ever
+`playing` across the entire corpus — thousands of real ticks including eat/die/win events. `_replay()`'s
+signature gained an optional `on_tick: Callable = Callable()` parameter (called just before each tick's
+`expected_tick` increment) to make this possible without duplicating the driver.
+
+No entry in `backlog/decisions/` was needed: this task enforces existing architectural rules rather than
+introducing new `reference/snake.html`-observable behavior — [[decision-018]]'s "audio is purely
+additive" reasoning applies here exactly as it did to TASK-039/040.

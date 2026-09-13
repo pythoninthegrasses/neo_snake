@@ -31,6 +31,22 @@ tasks:
     cmds:
       - zig cc -std=c11 -Wall -Wextra -I../include -c abi_header_check.c -o /dev/null
 
+  audio-boundary-check:
+    desc: "Fail if include/neo_snake.h or core/ names an audio-related symbol (TASK-041 AC#1)"
+    summary: |
+      task core:audio-boundary-check
+
+      Runs tools/validate_audio_boundary.py, which strips comments from
+      include/neo_snake.h and every core/*.c / core/*.zig file, then greps
+      the remaining code for audio/sound/sfx/music tokens. The Zig core and
+      its C ABI must never know audio exists (TASK-041 rule #1) — this is
+      the mechanical guard that a future change doesn't quietly thread an
+      audio concept across that boundary. Comments may still *reference*
+      audio as a downstream reason (e.g. include/neo_snake.h's own comment
+      about ns_event consumers) without tripping this check.
+    cmds:
+      - ./tools/validate_audio_boundary.py
+
   abi-symbols:
     desc: "Build core/abi.zig's static library and assert it exports only ns_* symbols (TASK-024 AC #1)"
     summary: |

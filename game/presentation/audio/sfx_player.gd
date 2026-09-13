@@ -10,6 +10,10 @@ extends Node
 ## Lives entirely in presentation (GameScreen owns one, wires play() calls
 ## into its own event handlers) -- core/*.zig never references audio in any
 ## form, per the milestone's "core never knows audio exists" rule.
+##
+## set_replaying(true) suppresses play() entirely (TASK-041 AC#3): replay
+## and rollback playback must never sound, and the flag lives here in
+## presentation, not in the sim, per the same rule.
 
 const SFX_DIR := "res://content/audio/sfx/"
 
@@ -22,6 +26,10 @@ const CUES: Array[String] = [
 const UI_CUES: Array[String] = ["ui_move", "ui_confirm"]
 
 var _players := {}
+var _replaying := false
+
+func set_replaying(replaying: bool) -> void:
+	_replaying = replaying
 
 func _ready() -> void:
 	for cue in CUES:
@@ -36,6 +44,8 @@ func _ready() -> void:
 		_players[cue] = player
 
 func play(cue: String) -> void:
+	if _replaying:
+		return
 	var player: AudioStreamPlayer = _players.get(cue)
 	if player != null and player.stream != null:
 		player.play()
