@@ -32,10 +32,30 @@ env.Append(LIBS=[core_lib])
 # (env["suffix"] already encodes platform/target/arch/.nothreads); game/bin/ is
 # where game/bin/neo_snake.gdextension (TASK-027) points its per-platform
 # [libraries] entries.
-library = env.SharedLibrary(
-    "../game/bin/libneo_snake{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
-    source=sources,
-)
+#
+# macOS (TASK-043) is the one platform where the .gdextension's [libraries]
+# entry (macos.debug/macos.release, see game/bin/neo_snake.gdextension) names
+# a *.framework directory with no arch suffix, not a flat .dylib -- godot-cpp's
+# own env["suffix"] always appends arch (tools/godotcpp.py), and neither
+# godot-cpp nor Godot's own docs (gdextension_cpp_example.rst) do any
+# framework-bundle packaging for the extension's own primary library, so this
+# repo's SConstruct builds the bundle directly: a directory literally named
+# "libneo_snake.macos.<target>.framework" containing one flat Mach-O binary of
+# the same name (minus the .framework suffix) -- the same shape godot-cpp's
+# own test/SConstruct uses, no Contents/Info.plist nesting required for a
+# GDExtension's own primary library (that nesting is only for a *dependency*
+# framework per gdextension_file.rst's Contents/Frameworks convention).
+if env["platform"] == "macos":
+    bundle_name = "libneo_snake.macos.{}.framework".format(env["target"])
+    library = env.SharedLibrary(
+        "../game/bin/{}/{}".format(bundle_name, bundle_name.removesuffix(".framework")),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "../game/bin/libneo_snake{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
 env.Depends(library, core_lib)
 
 Default(library)

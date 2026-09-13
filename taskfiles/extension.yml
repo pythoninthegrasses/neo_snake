@@ -18,3 +18,31 @@ tasks:
     cmds:
       - task: :core:abi-symbols
       - scons
+
+  build-macos:
+    desc: "Build the macOS (darwin/arm64) framework-bundle GDExtension via scons, for both debug and release targets (TASK-043)"
+    summary: |
+      task extension:build-macos
+
+      macOS-only counterpart to extension:build. Rebuilds
+      core/zig-out/lib/libneo_snake.a pinned to -Dtarget=aarch64-macos
+      (native on this host, so the pin is explicit rather than
+      load-bearing), then runs scons twice inside extension/
+      (platform=macos arch=arm64, once per target=template_debug and
+      target=template_release) so extension/SConstruct's macOS branch
+      produces both
+      game/bin/libneo_snake.macos.template_debug.framework/ and
+      .../template_release.framework/ bundles, matching
+      game/bin/neo_snake.gdextension's macos.debug/macos.release keys.
+
+      Gated platforms: [darwin/arm64] (see taskfiles/parity.yml's
+      platforms: [linux] precedent) so `task check` on any other host
+      silently skips this instead of attempting a cross build.
+    platforms: [darwin/arm64]
+    dir: extension
+    cmds:
+      - task: :core:abi-symbols
+        vars:
+          ZIG_TARGET_FLAG: "-Dtarget=aarch64-macos"
+      - scons platform=macos arch=arm64 target=template_debug
+      - scons platform=macos arch=arm64 target=template_release
