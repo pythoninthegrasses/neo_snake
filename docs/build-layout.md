@@ -1017,3 +1017,57 @@ Confirmed end to end on a real Apple Silicon host (Xcode 26.6): `task check` rea
 `audio:music-check`, which silently no-ops per go-task's `platforms:` allow-list semantics, and the
 whole chain exits 0 — 119/119 gdUnit4 test cases, both framework bundles built, no step skipped that
 wasn't deliberately gated.
+
+## macOS code signing and notarization ([[decision-027]], TASK-044)
+
+`taskfiles/release.yml` (`release:` in the root `taskfile.yml`) runs the whole unattended macOS
+release pipeline as `task release:ship-macos`: an ephemeral signing keychain, headless Godot export
+(the `.app` and its embedded GDExtension `.framework` both sign against the imported Developer ID
+identity with hardened runtime enabled), independent signature verification, notarization, and
+stapling — with keychain/API-key cleanup registered via `defer:` so it runs even if a later step
+fails (AC#4). Real credentials never live in this repo; they're supplied at runtime via
+`APPLE_SIGNING_IDENTITY`/`APPLE_CERTIFICATE`/`APPLE_CERTIFICATE_PASSWORD`/`KEYCHAIN_PASSWORD`/
+`APPLE_API_KEY_B64`/`APPLE_API_KEY`/`APPLE_API_ISSUER` env vars, each guarded by a `preconditions:`
+check with an actionable message (AC#3).
+
+**Signing hosts reached only over SSH need a `launchctl asuser` bridge.** [[decision-027]] has the
+full investigation; in short, macOS's Security framework won't release an imported private key to a
+process outside the GUI console login session's audit/bootstrap namespace, and a bare SSH session is
+always outside it. `export-macos` wraps its godot invocation in
+`sudo launchctl asuser "$(id -u)" ...` to re-attach into that namespace before signing starts, and
+routes the resulting DMG's ownership fix (`sudo launchctl asuser` doesn't drop root's EUID) through
+the identical `launchctl asuser` invocation rather than a bare `sudo chown`, so both stay covered by
+one narrowly-scoped sudoers.d entry: `lance ALL=(root) NOPASSWD: /bin/launchctl asuser *`. That entry
+must be installed directly by a human with sudo access on any such host — an agent must never be
+given or asked for a sudo password, so this is a manual, one-time signing-host prerequisite, not
+something `task release:ship-macos` provisions itself. It is a no-op wrapper on a machine where the
+work is driven directly from a real console session (normal SSH-free signing needs no wrapping).
+
+`export-macos` also resolves and invokes `godot` directly (`$(mise which godot)`) rather than going
+through `./tools/run.py`: `tools/run.py`'s `uv run --script` shebang was confirmed (by direct A/B
+testing under the same bridge) to break the audit-session inheritance the bridge is providing, even
+though a directly-invoked `godot` binary signs correctly under the identical wrapper. This is scoped
+to this one signing step — every other Godot invocation in this repo's task graph still goes through
+`tools/run.py` as normal.
+
+**`verify-signing` mounts the exported DMG (AC#2).** Godot's DMG export mode
+(`export_path` ending in `.dmg` in `game/export_presets.cfg`) builds and signs the `.app` inside a
+private temp directory and never leaves a loose bundle under `game/build/macos/` — only the final
+signed `.dmg`. `verify-signing` mounts it read-only via `hdiutil attach -nobrowse -readonly`, verifies
+the embedded `libneo_snake.macos.template_release.framework` directly (it's `dlopen`'d at runtime, so
+`codesign --verify --deep --strict` on the `.app` alone doesn't walk into it) plus its hardened-runtime
+flag, then the `.app`'s own nested signatures, then the DMG's own signature, and always detaches the
+mounted volume via a `trap ... EXIT` regardless of which check fails.
+
+**`notarize` adds a Gatekeeper-assessment step `~/git/mt`'s equivalent task doesn't have.** After
+`xcrun notarytool submit --wait` and `xcrun stapler staple`, it runs
+`spctl -a -vv --type open --context context:primary-signature` against the stapled DMG and asserts
+`accepted`/`source=Notarized Developer ID` — the automatable proxy for AC#1 ("opens on a clean Mac
+with no Gatekeeper prompt"), rather than trusting `notarytool`'s own submit response as sufficient
+proof.
+
+Confirmed end to end against live Apple infrastructure on `mini`: real notarization (Accepted), real
+stapling, `spctl` reporting `accepted`, both the `.framework` and `.app` independently verified signed
+with hardened runtime, credential preconditions failing with the intended messages when unset, and a
+forced-failure scratch-taskfile run confirming `defer:`-registered keychain cleanup still executes
+when `export-macos` fails.

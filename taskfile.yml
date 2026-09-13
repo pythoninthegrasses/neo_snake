@@ -32,6 +32,8 @@ includes:
     taskfile: ./taskfiles/parity.yml
   audio:
     taskfile: ./taskfiles/audio.yml
+  release:
+    taskfile: ./taskfiles/release.yml
 
 tasks:
   default:
