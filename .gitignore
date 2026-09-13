@@ -12,6 +12,10 @@ CLAUDE.md
 /game/reports/
 /game/build/
 
+# tools/capture_parity.sh output (TASK-037): comparison screenshots for
+# manual review, never committed.
+/artifacts/
+
 # General
 .DS_Store
 .localized

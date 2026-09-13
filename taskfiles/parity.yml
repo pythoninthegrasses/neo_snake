@@ -1,0 +1,24 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+tasks:
+  capture:
+    desc: "Capture judgment-matched golden-image comparison screenshots (Godot vs reference/snake.html) under headless sway"
+    summary: |
+      task parity:capture -- [output_dir]
+
+      Renders both reference/snake.html (a real Firefox window) and the
+      Godot build at menu/playing/paused/dead states under a headless sway
+      compositor (sway+wtype+grim, see tools/capture_parity.sh and
+      backlog/decisions/decision-025), writing PNGs to output_dir (default
+      artifacts/parity/) for a human to eyeball side by side.
+
+      Deliberately NOT part of `task check` -- this is a judgment-matched
+      comparison suite, not an automated pixel-diff gate (task-037's own
+      Description, and docs/build-layout.md). Requires sway, wtype, grim,
+      firefox and a resolved godot binary on PATH; Linux + Wayland only.
+    platforms: [linux]
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/capture_parity.sh {{.CLI_ARGS}}

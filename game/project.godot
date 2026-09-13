@@ -13,6 +13,12 @@ config_version=5
 config/name="Neo Snake"
 config/features=PackedStringArray("4.7")
 run/delta_smoothing=false
+run/main_scene="res://main.tscn"
+
+[display]
+
+window/size/viewport_width=520
+window/size/viewport_height=600
 
 [input]
 

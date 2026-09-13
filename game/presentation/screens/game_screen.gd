@@ -76,13 +76,17 @@ func _ready() -> void:
 	board_view = BoardView.new()
 	board_view.custom_minimum_size = Vector2(520, 520)
 	board_view.size = Vector2(520, 520)
+	board_view.position = Vector2(0, 0)
 	board_view.setup(world, _tuning, _palette)
 	add_child(board_view)
 
 	hud = Hud.new()
+	hud.position = Vector2(0, board_view.size.y)
 	add_child(hud)
 
 	overlay = OverlayPanel.new()
+	overlay.position = board_view.position
+	overlay.size = board_view.size
 	add_child(overlay)
 	overlay.set_modes(_modes, _current_mode_id)
 	overlay.action_pressed.connect(_on_overlay_action_pressed)
@@ -99,6 +103,36 @@ func _ready() -> void:
 	add_child(app_lifecycle)
 
 	_refresh_screen()
+	_maybe_drive_capture_state()
+
+## TASK-037 capture tooling only: real OS-level key injection via wtype does
+## not reach Godot's action map under headless sway (see
+## backlog/decisions/ for the writeup), so the parity capture harness drives
+## GameScreen straight through its own already-tested handlers instead of
+## simulating input events. Guarded behind an explicit --capture-state= CLI
+## arg that normal play never passes -- inert for every real player.
+func _maybe_drive_capture_state() -> void:
+	var state := _capture_state_arg()
+	if state == "" or state == "menu":
+		return
+	set_process(false)
+	_on_direction_queued(SimulationWorld.DIR_UP)
+	if state == "playing":
+		return
+	if state == "paused":
+		_on_pause_requested()
+		return
+	if state == "dead":
+		var guard := 0
+		while world.player_view_get(0).status != BoardGeometry.STATUS_DEAD and guard < 100000:
+			_process(0.05)
+			guard += 1
+
+func _capture_state_arg() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--capture-state="):
+			return arg.substr("--capture-state=".length())
+	return ""
 
 func _process(delta: float) -> void:
 	var pre_food_x := BoardGeometry.NO_CELL_COORD

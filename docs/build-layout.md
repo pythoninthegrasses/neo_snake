@@ -614,3 +614,57 @@ until/unless a later task drives a real paused world status through.
 `game/tests/test_game_screen.gd` instantiates a real `GameScreen`, following
 `test_app_lifecycle.gd`'s `add_child()`-then-call convention, with `save_dir_override` redirecting
 `SaveStore` off real `user://` data the same way `test_save_store.gd` isolates its own temp dir.
+
+## `tools/capture_parity.sh` + `taskfiles/parity.yml` (TASK-037)
+
+Golden-image parity suite, run via `task parity:capture` (never `task check` — see below). Renders
+both `reference/snake.html` (a real Firefox window) and the Godot build at each of `menu` /
+`playing` / `paused` / `dead`, under one headless `sway` compositor, capturing a PNG per state per
+side into `artifacts/parity/` (gitignored) for a human to eyeball side by side.
+
+**Why `sway`+`wtype`+`grim`, not `xvfb-run`.** [[decision-025]] has the full investigation; in short,
+`xvfb-run` wraps an X11 virtual framebuffer, but both the Godot build and Firefox render natively via
+Wayland on this machine, and no `Xvfb` package exists here at all. `sway`+`wtype`+`grim` is the
+combination `~/git/zelda3`'s `backlog/tasks/task-005` already proved on this same box, after ruling
+out `weston`, `ydotool`/`uinput`, and `cage`.
+
+**Why Godot's states are driven by a debug hook, not simulated key events.** `wtype` key injection
+into a live Godot window under headless sway does not produce any observable game-state change,
+despite genuine `wl_keyboard` protocol events reaching Godot's Wayland thread ([[decision-025]]) —
+apparently a Godot-Wayland-backend-specific issue, since the identical mechanism works fine against
+Firefox (below). `game_screen.gd`'s `_maybe_drive_capture_state()` (gated behind an
+`--capture-state=` CLI user-arg no normal launch ever passes) instead calls `GameScreen`'s own
+already-tested handlers directly — `_on_direction_queued()` to start, `_on_pause_requested()` to
+pause, and a `set_process(false)`-then-manual-`_process()` loop to reach `dead` without waiting on
+real wall-clock ticks or racing the engine's own automatic per-frame call.
+
+**Why the oracle side is driven by real key injection.** `reference/snake.html` must never be edited
+(`AGENTS.md`), so it has no equivalent hook — and needs none: unlike Godot, Firefox's GTK/Wayland
+input handling accepts `wtype`-injected keys correctly (`Up` to start, `Space` to pause/resume, and
+just letting wall-clock time pass after a start reliably runs the snake into the wall for `dead`,
+since the post-start direction is always clobbered to right — [[decision-015]]). Each state launches
+a fresh Firefox instance against a fresh temp profile rather than reusing one window, so there is
+never any input-ordering ambiguity between states (e.g. a stray second `Space` toggling pause back
+off).
+
+**Comparison methodology — judgment-matched, not pixel-exact.** This suite has no automated
+pixel-diff pass/fail gate; it produces comparable screenshots for a human reviewer to judge, per the
+task's own Description. Two categories of visual divergence are *expected* and not evidence of a
+regression:
+
+- **Canvas `shadowBlur` vs. `board_view.gd`'s additive radial-gradient sprite approximation**
+  ([[decision-006]], [[decision-022]]) — the oracle's Gaussian canvas glow has no direct Godot
+  `CanvasItem` equivalent; the port approximates it, and the difference is cosmetic and permanent.
+- **Integer vs. float `StyleBoxFlat` corner radii** ([[decision-007]]) — Godot's `StyleBoxFlat` only
+  accepts integer corner radii where the oracle's CSS `border-radius` is a float, producing a
+  sub-pixel rounding difference on rounded UI elements.
+
+A reviewer comparing `artifacts/parity/godot-*.png` against `artifacts/parity/oracle-*.png` should
+expect matching layout, color, text, and game state per pair, but should *not* flag either of the
+above as a bug — they are already-accepted, permanent divergences, not regressions to chase.
+
+**Why this is not part of `task check`.** AC#2 offers an explicit either/or: wired into `task check`,
+or "a documented separate task" — this follows `oracle:fuzz`'s existing precedent (a real, documented
+taskfile target deliberately excluded from `check`) rather than the former, since the suite requires
+`sway`/`wtype`/`grim`/`firefox` (Linux + Wayland only, per `platforms: [linux]` on the task) and
+produces screenshots for manual review rather than a hermetic pass/fail result `check` could gate on.
