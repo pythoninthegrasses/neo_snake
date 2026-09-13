@@ -1,0 +1,36 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+tasks:
+  render:
+    desc: "Render audio/src/sfx/*.chip.json patches to committed WAVs under audio/build/sfx/"
+    summary: |
+      task audio:render
+
+      Runs tools/render_audio.py --all, regenerating audio/build/sfx/*.wav
+      from every audio/src/sfx/*.chip.json patch. Run this after
+      adding/editing a patch, then commit the resulting WAV alongside it
+      (TASK-039 AC#2).
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/render_audio.py --all
+
+  check:
+    desc: "Assert render_audio.py is byte-reproducible and every committed SFX WAV matches a fresh render of its source patch"
+    summary: |
+      task audio:check
+
+      Runs tools/render_audio.py --self-test (proves two renders of the
+      same patch are byte-identical, TASK-038 AC#2), then --all --check
+      (re-renders every audio/src/sfx/*.chip.json into memory and diffs it
+      against the committed audio/build/sfx/*.wav, failing on any byte
+      diff, TASK-038 AC#3). Passes trivially with 0 patches. Pure stdlib
+      Python, no Wayland/GUI dependency, so -- unlike parity:capture or
+      oracle:fuzz -- there's no environmental reason to keep this out of
+      `task check`; it's wired into the main chain (see
+      docs/build-layout.md).
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/render_audio.py --self-test
+      - ./tools/render_audio.py --all --check
