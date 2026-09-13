@@ -46,3 +46,19 @@ func test_non_ui_cues_route_to_sfx_bus() -> void:
 			continue
 		var player: AudioStreamPlayer = _sfx._players[cue]
 		assert_str(player.bus).is_equal("SFX")
+
+
+func test_set_replaying_true_suppresses_play() -> void:
+	_sfx.set_replaying(true)
+	for cue in SfxPlayer.CUES:
+		_sfx.play(cue)
+		var player: AudioStreamPlayer = _sfx._players[cue]
+		assert_bool(player.playing).is_false()
+
+
+func test_set_replaying_false_restores_play() -> void:
+	_sfx.set_replaying(true)
+	_sfx.set_replaying(false)
+	_sfx.play("eat")
+	var player: AudioStreamPlayer = _sfx._players["eat"]
+	assert_bool(player.playing).is_true()

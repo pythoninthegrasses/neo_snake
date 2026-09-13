@@ -170,14 +170,22 @@ func _process(delta: float) -> void:
 				SimulationWorld.EVENT_EAT:
 					if pre_food_x != BoardGeometry.NO_CELL_COORD:
 						board_view.notify_eat(pre_food_x, pre_food_y)
-					sfx.play("eat")
 				SimulationWorld.EVENT_DIE:
 					_is_win = false
 					board_view.fx.flash = 1.0
-					sfx.play("die")
 				SimulationWorld.EVENT_WIN:
 					_is_win = true
-					sfx.play("win")
+		# Catch-up coalescing is presentation policy, not simulation policy
+		# (TASK-041 AC#2): a hitch can drive several ticks in this one call,
+		# and each eating tick pushed its own EVENT_EAT, so decide cues once
+		# per frame here instead of once per drained event.
+		var cues := AudioEventCoalescer.cues_for(drain.events)
+		if cues["eat"]:
+			sfx.play("eat")
+		if cues["die"]:
+			sfx.play("die")
+		if cues["win"]:
+			sfx.play("win")
 
 	_refresh_screen()
 

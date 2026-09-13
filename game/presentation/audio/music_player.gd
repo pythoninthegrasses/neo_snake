@@ -11,10 +11,18 @@ extends Node
 ## Lives entirely in presentation (GameScreen owns one) -- core/*.zig never
 ## references audio in any form, per the milestone's "core never knows
 ## audio exists" rule (same boundary SfxPlayer already keeps).
+##
+## set_replaying(true) suppresses play() entirely (TASK-041 AC#3): replay
+## and rollback playback must never sound, and the flag lives here in
+## presentation, not in the sim, per the same rule.
 
 const MUSIC_PATH := "res://content/audio/music/theme.ogg"
 
 var _player: AudioStreamPlayer
+var _replaying := false
+
+func set_replaying(replaying: bool) -> void:
+	_replaying = replaying
 
 func _ready() -> void:
 	_player = AudioStreamPlayer.new()
@@ -29,6 +37,8 @@ func _ready() -> void:
 	add_child(_player)
 
 func play() -> void:
+	if _replaying:
+		return
 	if _player.stream != null and not _player.playing:
 		_player.play()
 

@@ -38,3 +38,16 @@ func test_stop_stops_playback() -> void:
 	_music.play()
 	_music.stop()
 	assert_bool(_music.is_playing()).is_false()
+
+
+func test_set_replaying_true_suppresses_play() -> void:
+	_music.set_replaying(true)
+	_music.play()
+	assert_bool(_music.is_playing()).is_false()
+
+
+func test_set_replaying_false_restores_play() -> void:
+	_music.set_replaying(true)
+	_music.set_replaying(false)
+	_music.play()
+	assert_bool(_music.is_playing()).is_true()

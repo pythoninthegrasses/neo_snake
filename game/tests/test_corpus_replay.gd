@@ -73,10 +73,55 @@ func test_a_corrupted_committed_checksum_fails_replay() -> void:
 	assert_str(result["message"]).contains("checksum mismatch")
 
 
+## TASK-041 AC#3: set_replaying(true) must suppress all SFX/music triggers
+## during a corpus replay. Drives every representable corpus trace (the same
+## set test_every_corpus_trace_replays_with_matching_checksums_and_anchors
+## covers) through _replay(), and after every tick unconditionally routes
+## whatever events that tick produced through AudioEventCoalescer and
+## sfx.play()/music.play() -- exactly what GameScreen._process() does live.
+## With both players in replaying mode, none of this may ever actually
+## sound: across thousands of real ticks (eating, dying, winning included)
+## nothing should ever start playing.
+func test_set_replaying_true_suppresses_all_sfx_and_music_during_a_corpus_replay() -> void:
+	var sfx := SfxPlayer.new()
+	add_child(sfx)
+	var music := MusicPlayer.new()
+	add_child(music)
+	sfx.set_replaying(true)
+	music.set_replaying(true)
+
+	var drive_audio := func(world: SimulationWorld) -> void:
+		var drain := world.event_drain(16)
+		if drain.result != SimulationWorld.OK:
+			return
+		var cues := AudioEventCoalescer.cues_for(drain.events)
+		if cues["eat"]:
+			sfx.play("eat")
+		if cues["die"]:
+			sfx.play("die")
+		if cues["win"]:
+			sfx.play("win")
+		music.play()
+
+	var manifest: Dictionary = JSON.parse_string(_read_file(MANIFEST_PATH))
+	for entry in manifest["files"]:
+		var name := String(entry["name"])
+		if ABI_UNREPRESENTABLE_TRACES.has(name):
+			continue
+		var text := _read_file(CORPUS_DIR + String(entry["file"]))
+		var result := _replay(text, name, drive_audio)
+		if not result["ok"]:
+			fail(result["message"])
+
+	for cue in SfxPlayer.CUES:
+		assert_bool(sfx._players[cue].playing).is_false()
+	assert_bool(music.is_playing()).is_false()
+
+
 # --- replay driver -------------------------------------------------------
 
 
-func _replay(text: String, name: String) -> Dictionary:
+func _replay(text: String, name: String, on_tick: Callable = Callable()) -> Dictionary:
 	var lines := text.split("\n")
 	var header: Dictionary = JSON.parse_string(lines[0])
 	var players: int = header["players"]
@@ -136,6 +181,9 @@ func _replay(text: String, name: String) -> Dictionary:
 			var anchor_bytes := _hex_decode(String(line["s"]))
 			if bytes != anchor_bytes:
 				return {"ok": false, "message": "%s: tick %d: full-state anchor mismatch" % [name, t]}
+
+		if on_tick.is_valid():
+			on_tick.call(world)
 
 		expected_tick += 1
 
