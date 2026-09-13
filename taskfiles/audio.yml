@@ -69,6 +69,18 @@ tasks:
       this is an external-binary dependency, the same category as
       game:test's Godot/gdUnit4 requirement; it's wired into the main
       `check:` chain on that same precedent (see docs/build-layout.md).
+
+      Gated platforms: [linux] (TASK-043): the --all --check comparison
+      decodes both a fresh render and the committed .ogg back to PCM and
+      requires exact sample equality. Furnace's synthesis itself is
+      cross-platform deterministic (confirmed: identical sample count on
+      darwin/arm64), but the OGG Vorbis encode step (libsndfile/libvorbis)
+      produces small floating-point differences across platforms/builds
+      (observed: max abs diff ~0.014, ~3.8% of samples), so exact-equality
+      only holds against the platform the committed asset was rendered on
+      (Linux) -- same platforms: gating pattern as extension:build vs
+      extension:build-macos.
+    platforms: [linux]
     dir: "{{.ROOT_DIR}}"
     cmds:
       - ./tools/render_music.py --self-test
