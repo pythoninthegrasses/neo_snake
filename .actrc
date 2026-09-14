@@ -1,0 +1,14 @@
+# act configuration for local GitHub Actions verification (TASK-049).
+# Ref: https://nektosact.com/
+
+# The [self-hosted, macOS, ARM64] job runs directly on the host (no
+# container) -- this machine already has the full toolchain via mise,
+# same as the real self-hosted runner would. act maps each runs-on label
+# individually, so all three need the same -self-hosted mapping.
+-P self-hosted=-self-hosted
+-P macOS=-self-hosted
+-P ARM64=-self-hosted
+
+# Hosted ubuntu-latest jobs run in act's own medium image, which ships
+# node/git/curl and matches what GitHub's own runners provide.
+-P ubuntu-latest=catthehacker/ubuntu:act-latest

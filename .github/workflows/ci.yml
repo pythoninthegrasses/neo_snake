@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (build, test, sign, notarize)
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    env:
+      # No .env file exists on the runner (it's gitignored, see .env.example) --
+      # task check's own guard step fails loudly without this.
+      TASK_X_ENV_PRECEDENCE: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup self-hosted runner PATH
+        run: |
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/bin:/opt/homebrew/sbin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap Godot toolchain
+        # game/addons/gdUnit4/ and the Godot binary/export templates are
+        # gitignored -- each checkout's workspace needs its own bootstrap,
+        # the runner host being persistent doesn't carry them over.
+        run: task game:bootstrap
+
+      - name: Build and test
+        run: task ci:macos-check
+
+      - name: Sign and notarize
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: task ci:macos-release
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+  linux:
+    name: Linux (Docker build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: go-task/setup-task@v1
+
+      - name: Build and test inside Docker
+        run: task ci:linux-docker-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libneo_snake-linux
+          path: dist/
+          if-no-files-found: error

@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3.0"
+
+tasks:
+  macos-check:
+    desc: "CI entry point: build + test on macOS (TASK-049)"
+    summary: |
+      task ci:macos-check
+
+      Thin wrapper so the macOS GitHub Actions job's every step is
+      `task ci:<target>`, per TASK-049 AC#1 -- no build logic lives in the
+      workflow YAML itself. Identical to what a contributor runs locally.
+    platforms: [darwin]
+    cmds:
+      - task: :check
+
+  macos-release:
+    desc: "CI entry point: sign + notarize the macOS build (TASK-049)"
+    summary: |
+      task ci:macos-release
+
+      Thin wrapper around the already-existing release:ship-macos pipeline
+      (TASK-044). Gated in the workflow to push-to-main only, since it
+      needs the Apple signing secrets and there is no reason to spend an
+      Apple API notarization request on every PR.
+    platforms: [darwin]
+    cmds:
+      - task: :release:ship-macos
+
+  linux-docker-build:
+    desc: "CI entry point: Linux build + test inside Docker, artifact extracted (TASK-049)"
+    summary: |
+      task ci:linux-docker-build
+
+      Runs docker/linux/Dockerfile's check and artifacts stages (TASK-045)
+      -- the check stage runs core:test/core:difftest/core:abitest inside
+      the container, the artifacts stage extracts the built .so. All build
+      logic lives in the Dockerfile, not here or in the workflow YAML.
+    platforms: [linux]
+    cmds:
+      - docker build --target check -f docker/linux/Dockerfile {{.ROOT_DIR}}
+      - docker build --target artifacts --output type=local,dest={{.ROOT_DIR}}/dist -f docker/linux/Dockerfile {{.ROOT_DIR}}
+
+  fuzz:
+    desc: "CI entry point: nightly discovery fuzz job (TASK-049)"
+    summary: |
+      task ci:fuzz
+
+      Thin wrapper around oracle:fuzz (deliberately not part of task
+      check -- see taskfiles/oracle.yml). Run on a schedule, not on every
+      push/PR.
+    cmds:
+      - task oracle:fuzz -- --count 500
