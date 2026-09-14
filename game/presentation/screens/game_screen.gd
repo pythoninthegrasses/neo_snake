@@ -53,6 +53,7 @@ var overlay: OverlayPanel
 var settings_panel: SettingsPanel
 var input_router: InputRouter
 var app_lifecycle: AppLifecycle
+var web_checksum_smoke_test: WebChecksumSmokeTest
 var save_store: SaveStore
 var sfx: SfxPlayer
 var music: MusicPlayer
@@ -127,6 +128,9 @@ func _ready() -> void:
 	app_lifecycle = AppLifecycle.new()
 	app_lifecycle.focus_lost.connect(_on_focus_lost)
 	add_child(app_lifecycle)
+
+	web_checksum_smoke_test = WebChecksumSmokeTest.new()
+	add_child(web_checksum_smoke_test)
 
 	sfx = SfxPlayer.new()
 	add_child(sfx)

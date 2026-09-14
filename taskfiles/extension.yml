@@ -111,3 +111,63 @@ tasks:
           CORE_LIB_NAME: "neo_snake.lib"
       - scons platform=windows use_mingw=yes use_static_cpp=yes arch=x86_64 target=template_debug
       - scons platform=windows use_mingw=yes use_static_cpp=yes arch=x86_64 target=template_release
+
+  build-web:
+    desc: "Build the Web (wasm32, nothreads) GDExtension via emsdk+scons, for both debug and release targets (TASK-048)"
+    summary: |
+      task extension:build-web
+
+      Web counterpart to extension:build. Rebuilds
+      core/zig-out/lib/libneo_snake.a pinned to -Dtarget=wasm32-emscripten,
+      then runs scons twice inside extension/ (platform=web arch=wasm32
+      threads=no lto=none, once per target=template_debug and
+      target=template_release) so extension/SConstruct's generic (non-macOS,
+      non-Windows) branch produces
+      game/bin/libneo_snake.web.template_debug.wasm32.nothreads.wasm and
+      .../template_release.wasm32.nothreads.wasm, matching
+      game/bin/neo_snake.gdextension's web.debug.wasm32.nothreads/
+      web.release.wasm32.nothreads keys.
+
+      lto=none is mandatory (TASK-048's own Description): without it,
+      emscripten-clang bitcode and Zig-clang bitcode mix during linking,
+      which is unsupported.
+
+      -Doptimize=ReleaseSmall on the core build is also mandatory, not just
+      a size optimization: core/abi.zig built at the default Debug (or
+      ReleaseSafe) optimize level pulls in Zig 0.16.0's std.Io.Threaded
+      panic/safety-check machinery, which references
+      posix.system.getrandom/IOV_MAX -- undefined for the wasm32-emscripten
+      target in this Zig version, so the build fails outright. ReleaseFast/
+      ReleaseSmall skip that code path entirely; ReleaseSmall is picked
+      since a smaller .wasm is also strictly better for a browser download.
+      This doesn't weaken Tier-D's checksum guarantee (AC #2): stripping
+      safety-check panics doesn't change the actual computed SHA-256 output
+      for well-formed input, only removes traps for malformed input the
+      checksum path never receives.
+
+      Requires emsdk on PATH with EMSDK/EMSCRIPTEN_ROOT set (`mise exec
+      emsdk@<EMSDK_VERSION> -- ...`, task-047's web:bootstrap), including for
+      the core:abi-symbols step -- NM_BIN=llvm-nm because system `nm` can't
+      parse a wasm archive.
+
+      SConstruct itself needed one fix for web (TASK-048): its
+      ARCOM_POSIX/TEMPFILE(ARCOM_POSIX) `ar` response-file workaround
+      (comment above, TASK-043) must skip platform=web, not just macOS --
+      godot-cpp's own tools/web.py already applies the identical fix
+      internally, so reapplying it here wrapped env["ARCOM_POSIX"] in a
+      TEMPFILE(ARCOM_POSIX) that referred to itself, and SCons' variable
+      substitution recursed until Python's recursion limit was hit.
+
+      Gated platforms: [linux] since that's the only host this has actually
+      been built and browser-verified on; emsdk itself is host-portable, but
+      nothing here has exercised that.
+    platforms: [linux]
+    dir: extension
+    vars:
+      EMSDK_VERSION:
+        sh: grep '^EMSDK_VERSION=' {{.ROOT_DIR}}/tools/game_toolchain.lock | cut -d'"' -f2
+    cmds:
+      - cmd: mise exec emsdk@{{.EMSDK_VERSION}} -- task core:abi-symbols ZIG_TARGET_FLAG="-Dtarget=wasm32-emscripten -Doptimize=ReleaseSmall" NM_BIN=llvm-nm
+        dir: "{{.ROOT_DIR}}"
+      - mise exec emsdk@{{.EMSDK_VERSION}} -- scons platform=web arch=wasm32 threads=no lto=none target=template_debug
+      - mise exec emsdk@{{.EMSDK_VERSION}} -- scons platform=web arch=wasm32 threads=no lto=none target=template_release

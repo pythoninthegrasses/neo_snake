@@ -1192,3 +1192,50 @@ build. See [[decision-030]] for the complete reasoning and the Go decision.
 needed) via `web_dlink_nothreads_release`/`_debug`, provided Thread Support stays disabled and (if a
 PWA is ever added) `progressive_web_app/ensure_cross_origin_isolation_headers` stays `false` so the
 generated service worker doesn't force headers a nothreads build doesn't need.
+
+## Real web build: `extension:build-web`, `web_checksum_smoke_test.gd` ([[decision-031]], TASK-048)
+
+`taskfiles/extension.yml`'s `build-web` task is the web counterpart to `extension:build` /
+`build-macos` / `build-windows`: it rebuilds `core/zig-out/lib/libneo_snake.a` pinned to
+`-Dtarget=wasm32-emscripten -Doptimize=ReleaseSmall`, then runs `scons platform=web arch=wasm32
+threads=no lto=none` twice (`template_debug`/`template_release`), producing
+`game/bin/libneo_snake.web.template_{debug,release}.wasm32.nothreads.wasm` — matching
+`game/bin/neo_snake.gdextension`'s new `web.debug.wasm32.nothreads`/`web.release.wasm32.nothreads`
+keys and `game/export_presets.cfg`'s new `[preset.1]` "Web" preset.
+
+**`-Doptimize=ReleaseSmall` is mandatory, not a size choice**: `core/abi.zig` at the default Debug
+(or explicit ReleaseSafe) optimize level pulls in Zig 0.16.0's `std.Io.Threaded` panic/safety-check
+machinery, which references `posix.system.getrandom`/`IOV_MAX` — undefined for `wasm32-emscripten`
+in this Zig version, so the build fails outright. `core:abi-symbols`' symbol-purity check also needs
+`NM_BIN=llvm-nm` (emsdk's own bundled LLVM) here, since system `nm` can't parse a wasm archive
+("file format not recognized"). See [[decision-031]] for the full diagnosis.
+
+**`extension/SConstruct` needed one real fix**: its TASK-043 `ARCOM_POSIX`/`TEMPFILE(ARCOM_POSIX)`
+`ar`-response-file workaround must skip `platform=web` as well as `macos` — godot-cpp's own
+`tools/web.py` already applies the identical fix internally for web, so re-applying it here wrapped
+`ARCOM_POSIX` in a self-referencing `TEMPFILE(ARCOM_POSIX)` and SCons' variable substitution
+recursed past Python's recursion limit. This is the one genuine source-level bug this task found and
+fixed, as opposed to purely additive taskfile/config work.
+
+**AC#2 ("HashingContext.HASH_SHA256 is smoke-tested in the web runtime") names a class this codebase
+never uses** — the real checksum chain is `core/canon.zig`'s SHA-256 via `ns_checksum` via
+`NeoSnakeWorld.checksum()`, the same chain `game/tests/test_corpus_replay.gd` (Tier-D) already
+exercises natively. `game/platform/web_checksum_smoke_test.gd` (a `Node`, instantiated by
+`GameScreen._ready()` exactly like `AppLifecycle`, gated on `OS.has_feature("web")` so it's a no-op
+everywhere else) replays the same `one-turn-per-tick` corpus trace `test_corpus_replay.gd` already
+uses for its corrupted-checksum negative case, tick-by-tick through `SimulationWorld`, and prints
+`WEB_CHECKSUM_SMOKE_TEST: PASS`/`FAIL <reason>` to the browser console — extending Tier-D's native
+guarantee to the wasm32-emscripten target running in a real browser.
+
+**`export_filter="all_resources"` does not include every extension by default**: `game/export_presets.cfg`'s
+Web preset needed `include_filter="*.jsonl"` added, or the corpus trace files silently didn't make it
+into the exported `.pck` even though `manifest.json` (a recognized `.json` extension) did — caught by
+the smoke test failing to open the trace file in a real export, not by the export step itself
+erroring.
+
+**Verified end-to-end with a headless-Chromium Playwright session** (same pattern as decision-030's
+spike) against the real project's `--export-debug "Web"` output: `WEB_CHECKSUM_SMOKE_TEST: PASS`,
+zero `pageerror`s, zero `console:error` messages, and a real play session (movement, wall-collision
+death, Game Over overlay, HUD score) rendering and responding to keyboard input correctly. See
+[[decision-031]] for the full reasoning, including a native Linux `signal 11` seen once during setup
+that did not reproduce after a clean rebuild.
