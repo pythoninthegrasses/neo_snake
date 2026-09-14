@@ -5,23 +5,31 @@ covers the judgment calls `core/abi.zig` (TASK-024) makes filling that contract 
 header deliberately left open, or that only became concrete once real `core/world.zig`,
 `core/rng.zig`, and `core/canon.zig` code had to be wired behind it.
 
-## `player_count` is restricted to 1, for now
+## `player_count` supports up to 2 (TASK-051)
 
-`core/world.zig`'s `World` has no per-player dimension — `dir`, `next_dir`, `score`, the cell
-buffer, are all scalar, genuinely single-player. `include/neo_snake.h` anticipates multiplayer
-(`ns_config.player_count`, every per-player-indexed function), but freeze #1
-(`docs/abi-decisions.md`) only fixes what a *future* multiplayer ABI must look like when it
-arrives — it does not require building it now. `backlog/decisions/decision-020` is the direct
-precedent: a minimal two-player primitive already exists, but scoped narrowly to one Tier-B fuzz
+`core/world.zig`'s `World` originally had no per-player dimension — `dir`, `next_dir`, `score`, the
+cell buffer, were all scalar, genuinely single-player. `include/neo_snake.h` had always anticipated
+multiplayer (`ns_config.player_count`, every per-player-indexed function), and freeze #1
+(`docs/abi-decisions.md`) fixed what a multiplayer ABI must look like once real per-player state
+existed, but didn't require building it until something needed it. `backlog/decisions/decision-020`
+was the interim precedent: a minimal two-player primitive scoped narrowly to one Tier-B fuzz
 invariant, explicitly not touching `core/world.zig` and explicitly not a preview of the real
-multiplayer design. TASK-024 is milestone m-4; real multiplayer is m-8.
+multiplayer design.
 
-So `core/abi.zig` defines `MAX_SUPPORTED_PLAYERS: u8 = 1` and rejects any other `player_count` in
-`ns_world_init` with `NS_ERR_INVALID_ARGUMENT` — the same "additive later, not a rewrite" shape as
-the header's own `speed_source` field. Every player-index bounds check (`ns_queue_dir`, `ns_step`,
+TASK-051 (m-8, local 2-player) is that "something" — `core/world.zig` now carries a real
+per-player dimension (`PlayerState`, `MAX_PLAYERS = 2`), and `core/abi.zig` defines
+`MAX_SUPPORTED_PLAYERS: u8 = world.MAX_PLAYERS` (currently 2, not N — YAGNI, matching the only AC
+that has ever needed a number). `ns_world_init` rejects any `player_count` outside `1..=
+MAX_SUPPORTED_PLAYERS` with `NS_ERR_INVALID_ARGUMENT`, the same "additive later, not a rewrite"
+shape as the header's own `speed_source` field, and additionally rejects `player_count > 1` on a
+board with `rows <= 8` (too short for two players' starting snakes to avoid overlapping under the
+starting-row spacing formula). Every player-index bounds check (`ns_queue_dir`, `ns_step`,
 `ns_player_view_get`, `ns_body_copy`) compares against `WorldStorage.player_count`, a value stored
-at init time, not a literal `0` — loosening this later only changes what `ns_world_init` accepts,
-not any call site.
+at init time, not a literal `1` — loosening the cap further only changes what `ns_world_init`
+accepts, not any call site. The actual collision/status/win semantics for `player_count == 2` are
+`backlog/decisions/decision-034`, not this doc — this section only covers the ABI-boundary
+plumbing. `fuzz_seeds.zig`'s `decision-020` primitive is untouched and remains a separate, narrower
+fixture.
 
 ## Telling win from die apart
 

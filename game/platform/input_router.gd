@@ -18,7 +18,7 @@ extends Node
 ## other platform/presentation script landed so far
 ## (game/simulation/tick_driver.gd, game/presentation/board/board_view.gd).
 
-signal direction_queued(dir: int)
+signal direction_queued(player: int, dir: int)
 signal pause_requested
 signal restart_requested
 
@@ -41,11 +41,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		restart_requested.emit()
 		get_viewport().set_input_as_handled()
 		return
-	for action: String in InputDefaults.ACTION_TO_DIR:
-		if event.is_action_pressed(action):
-			direction_queued.emit(InputDefaults.ACTION_TO_DIR[action])
-			get_viewport().set_input_as_handled()
-			return
+	for player: int in InputDefaults.PLAYER_ACTIONS.size():
+		var action_to_dir: Dictionary = InputDefaults.PLAYER_ACTIONS[player]
+		for action: String in action_to_dir:
+			if event.is_action_pressed(action):
+				direction_queued.emit(player, action_to_dir[action])
+				get_viewport().set_input_as_handled()
+				return
 	if event is InputEventScreenTouch:
 		_handle_touch(event)
 	elif event is InputEventScreenDrag:
@@ -62,7 +64,7 @@ func _handle_touch(event: InputEventScreenTouch) -> void:
 func _handle_drag(event: InputEventScreenDrag) -> void:
 	var dir := _swipe.update(event.position, cell_px, swipe_threshold_cell_fraction)
 	if dir != -1:
-		direction_queued.emit(dir)
+		direction_queued.emit(0, dir)
 		get_viewport().set_input_as_handled()
 
 ## Left stick only (JOY_AXIS_LEFT_X/_Y) -- Y+ is down, matching the
@@ -75,5 +77,5 @@ func _handle_joypad_motion(event: InputEventJoypadMotion) -> void:
 	elif event.axis == JOY_AXIS_LEFT_Y:
 		dir = _stick_y.feed(event.axis_value, SimulationWorld.DIR_DOWN, SimulationWorld.DIR_UP)
 	if dir != -1:
-		direction_queued.emit(dir)
+		direction_queued.emit(0, dir)
 		get_viewport().set_input_as_handled()

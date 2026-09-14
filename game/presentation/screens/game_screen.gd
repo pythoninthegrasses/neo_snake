@@ -48,6 +48,7 @@ var save_dir_override := ""
 
 var world: SimulationWorld
 var board_view: BoardView
+var board_view_p2: BoardView
 var hud: Hud
 var overlay: OverlayPanel
 var settings_panel: SettingsPanel
@@ -85,14 +86,24 @@ func _ready() -> void:
 	_current_mode_id = _save_data.last_mode if _has_mode(_save_data.last_mode) else content.modes.default_mode
 
 	world = SimulationWorld.new()
-	world.init(COLS, ROWS, 1, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+	world.init(COLS, ROWS, 2, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
 
 	board_view = BoardView.new()
 	board_view.custom_minimum_size = Vector2(520, 520)
 	board_view.size = Vector2(520, 520)
 	board_view.position = Vector2(0, 0)
-	board_view.setup(world, _tuning, _palette)
+	board_view.setup(world, _tuning, _palette, 0)
 	add_child(board_view)
+
+	## TASK-051: board_view.gd is already generic over `player` -- a second
+	## instance, sharing the same world/board geometry, renders player 1's
+	## snake on top of the same shared board/food/grid.
+	board_view_p2 = BoardView.new()
+	board_view_p2.custom_minimum_size = Vector2(520, 520)
+	board_view_p2.size = Vector2(520, 520)
+	board_view_p2.position = Vector2(0, 0)
+	board_view_p2.setup(world, _tuning, _palette, 1)
+	add_child(board_view_p2)
 	_apply_settings(_save_data.settings)
 
 	hud = Hud.new()
@@ -120,7 +131,7 @@ func _ready() -> void:
 	settings_panel.closed.connect(_on_settings_closed)
 
 	input_router = InputRouter.new()
-	input_router.direction_queued.connect(_on_direction_queued)
+	input_router.direction_queued.connect(func(player: int, dir: int) -> void: _on_direction_queued(dir, player))
 	input_router.pause_requested.connect(_on_pause_requested)
 	input_router.restart_requested.connect(_on_restart_requested)
 	add_child(input_router)
@@ -161,7 +172,7 @@ func _maybe_drive_capture_state() -> void:
 		return
 	if state == "dead":
 		var guard := 0
-		while world.player_view_get(0).status != BoardGeometry.STATUS_DEAD and guard < 100000:
+		while _shared_status() != BoardGeometry.STATUS_DEAD and guard < 100000:
 			_process(0.05)
 			guard += 1
 
@@ -185,13 +196,14 @@ func _process(delta: float) -> void:
 	var drain := world.event_drain(16)
 	if drain.result == SimulationWorld.OK:
 		for event in drain.events:
+			var event_board_view: BoardView = board_view if event.player == 0 else board_view_p2
 			match event.kind:
 				SimulationWorld.EVENT_EAT:
 					if pre_food_x != BoardGeometry.NO_CELL_COORD:
-						board_view.notify_eat(pre_food_x, pre_food_y)
+						event_board_view.notify_eat(pre_food_x, pre_food_y)
 				SimulationWorld.EVENT_DIE:
 					_is_win = false
-					board_view.fx.trigger_flash()
+					event_board_view.fx.trigger_flash()
 				SimulationWorld.EVENT_WIN:
 					_is_win = true
 		# Catch-up coalescing is presentation policy, not simulation policy
@@ -208,19 +220,35 @@ func _process(delta: float) -> void:
 
 	_refresh_screen()
 
+## Recovers the true shared world status from only per-player ABI calls (no
+## new header/ABI function is permitted -- TASK-051 AC#1). A player's own
+## projected status is DEAD whenever it is not alive (core/abi.zig's
+## playerStatus); the shared world only ever becomes DEAD once every player
+## is simultaneously eliminated (backlog/decisions/decision-034). So player
+## 0's own status already IS the shared status unless player 0 individually
+## died first, in which case player 1's status settles it.
+func _shared_status() -> int:
+	var v0: int = world.player_view_get(0).status
+	if v0 != BoardGeometry.STATUS_DEAD:
+		return v0
+	return world.player_view_get(1).status
+
 func _refresh_screen() -> void:
-	var view := world.player_view_get(0)
-	if view.result != SimulationWorld.OK:
+	var view0 := world.player_view_get(0)
+	if view0.result != SimulationWorld.OK:
 		return
-	var screen := GameScreenState.screen_for(view.status, _paused)
+	var view1 := world.player_view_get(1)
+	var screen := GameScreenState.screen_for(_shared_status(), _paused)
 	var best: int = _save_data.best_scores.get(_current_mode_id, 0)
-	if view.score > best:
-		best = view.score
+	if view0.score > best:
+		best = view0.score
 		_save_data.best_scores[_current_mode_id] = best
 		_save_data.last_mode = _current_mode_id
 		save_store.save(_save_data)
 
-	hud.update(view.score, best, screen.capitalize())
+	hud.update(view0.score, best, GameScreenState.screen_for(view0.status, _paused).capitalize())
+	if view1.result == SimulationWorld.OK:
+		hud.update_p2(view1.score, GameScreenState.screen_for(view1.status, _paused).capitalize())
 
 	if _settings_open:
 		return
@@ -229,7 +257,7 @@ func _refresh_screen() -> void:
 		return
 	var body := world.body_copy(0)
 	var snake_len: int = body.cells.size() if body.result == SimulationWorld.OK else 0
-	overlay.configure(GameScreenState.overlay_content(screen, view.score, best, snake_len, _is_win))
+	overlay.configure(GameScreenState.overlay_content(screen, view0.score, best, snake_len, _is_win))
 
 func _has_mode(mode_id: String) -> bool:
 	for mode in _modes:
@@ -251,7 +279,8 @@ func _on_pause_requested() -> void:
 	var view := world.player_view_get(0)
 	if view.result != SimulationWorld.OK:
 		return
-	if view.status == BoardGeometry.STATUS_MENU or view.status == BoardGeometry.STATUS_DEAD:
+	var status := _shared_status()
+	if status == BoardGeometry.STATUS_MENU or status == BoardGeometry.STATUS_DEAD:
 		_start_or_restart()
 	else:
 		_paused = not _paused
@@ -268,7 +297,8 @@ func _on_restart_requested() -> void:
 	var view := world.player_view_get(0)
 	if view.result != SimulationWorld.OK:
 		return
-	if view.status == BoardGeometry.STATUS_MENU or view.status == BoardGeometry.STATUS_DEAD:
+	var status := _shared_status()
+	if status == BoardGeometry.STATUS_MENU or status == BoardGeometry.STATUS_DEAD:
 		_start_or_restart()
 	else:
 		world.reset()
@@ -283,7 +313,8 @@ func _on_overlay_action_pressed() -> void:
 	if view.result != SimulationWorld.OK:
 		return
 	sfx.play("ui_confirm")
-	if view.status == BoardGeometry.STATUS_PLAYING and _paused:
+	var status := _shared_status()
+	if status == BoardGeometry.STATUS_PLAYING and _paused:
 		_paused = false
 		_refresh_screen()
 	else:
@@ -291,8 +322,8 @@ func _on_overlay_action_pressed() -> void:
 
 func _start_or_restart() -> void:
 	var view := world.player_view_get(0)
-	if view.result == SimulationWorld.OK and view.status == BoardGeometry.STATUS_MENU:
-		world.init(COLS, ROWS, 1, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+	if view.result == SimulationWorld.OK and _shared_status() == BoardGeometry.STATUS_MENU:
+		world.init(COLS, ROWS, 2, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
 	world.queue_dir(0, SimulationWorld.DIR_RIGHT)
 	_paused = false
 	_is_win = false
@@ -306,13 +337,13 @@ func _start_or_restart() -> void:
 ## unconditionally sets S.dir = S.nextDir = right (snake.html:312) AFTER
 ## queueDir() already set nextDir to the pressed key, clobbering it. So the
 ## keypress that starts a run never steers it; only the run itself.
-func _on_direction_queued(dir: int) -> void:
-	var view := world.player_view_get(0)
-	if view.result == SimulationWorld.OK and (view.status == BoardGeometry.STATUS_MENU or view.status == BoardGeometry.STATUS_DEAD):
+func _on_direction_queued(dir: int, player: int = 0) -> void:
+	var status := _shared_status()
+	if status == BoardGeometry.STATUS_MENU or status == BoardGeometry.STATUS_DEAD:
 		_start_or_restart()
 		return
 	sfx.play("turn")
-	world.queue_dir(0, dir)
+	world.queue_dir(player, dir)
 
 func _on_mode_selected(mode_id: String) -> void:
 	sfx.play("ui_move")
@@ -322,7 +353,7 @@ func _on_mode_selected(mode_id: String) -> void:
 ## only fires while actually playing.
 func _on_focus_lost() -> void:
 	var view := world.player_view_get(0)
-	if view.result == SimulationWorld.OK and view.status == BoardGeometry.STATUS_PLAYING and not _paused:
+	if view.result == SimulationWorld.OK and _shared_status() == BoardGeometry.STATUS_PLAYING and not _paused:
 		_paused = true
 		_refresh_screen()
 
@@ -336,6 +367,7 @@ func _apply_settings(settings: Dictionary) -> void:
 		if bus_idx >= 0:
 			AudioServer.set_bus_volume_db(bus_idx, settings.volume_db[bus])
 	board_view.fx.reduce_flash = settings.reduce_flash
+	board_view_p2.fx.reduce_flash = settings.reduce_flash
 	KeybindCodec.apply_to_input_map(settings.keybinds)
 
 func _on_settings_requested() -> void:
