@@ -1,0 +1,850 @@
+{
+	"config": {
+		"checksum_interval": 30,
+		"cols": 24,
+		"input_delay": 3,
+		"player_count": 2,
+		"rng_seed": [
+			1,
+			2,
+			3,
+			4
+		],
+		"rows": 24,
+		"speed_source": 0,
+		"wrap": false
+	},
+	"latency_a_to_b": 1,
+	"latency_b_to_a": 1,
+	"peer_a": {
+		"checksum": "5563161792446346117",
+		"input_log": [
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 0
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 0
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 1
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 1
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 2
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 2
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 3
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 3
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 4
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 4
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 5
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 5
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 6
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 6
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 7
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 7
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 8
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 8
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 9
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 9
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 10
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 10
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 11
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 11
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 12
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 12
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 13
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 13
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 14
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 14
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 15
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 15
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 16
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 16
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 17
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 17
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 18
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 18
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 19
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 19
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 20
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 20
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 21
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 21
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 22
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 22
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 23
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 23
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 24
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 24
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 25
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 25
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 26
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 26
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 27
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 27
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 28
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 28
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 29
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 29
+			}
+		],
+		"state_bytes": [
+			78,
+			69,
+			79,
+			83,
+			78,
+			65,
+			75,
+			69,
+			1,
+			0,
+			24,
+			0,
+			24,
+			0,
+			0,
+			0,
+			2,
+			0,
+			0,
+			0,
+			13,
+			0,
+			0,
+			0,
+			2,
+			52,
+			128,
+			1,
+			7,
+			48,
+			0,
+			0,
+			2,
+			62,
+			8,
+			0,
+			12,
+			40,
+			32,
+			0,
+			0,
+			0,
+			0,
+			0,
+			1,
+			3,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			21,
+			0,
+			8,
+			0,
+			20,
+			0,
+			8,
+			0,
+			19,
+			0,
+			8,
+			0,
+			1,
+			3,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			21,
+			0,
+			16,
+			0,
+			20,
+			0,
+			16,
+			0,
+			19,
+			0,
+			16,
+			0,
+			133,
+			51,
+			202,
+			226,
+			44,
+			82,
+			52,
+			77
+		]
+	},
+	"peer_b": {
+		"checksum": "-7014204919041403013",
+		"input_log": [
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 0
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 0
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 1
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 1
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 2
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 2
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 3
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 3
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 4
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 4
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 5
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 5
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 6
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 6
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 7
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 7
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 8
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 8
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 9
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 9
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 10
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 10
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 11
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 11
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 12
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 12
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 13
+			},
+			{
+				"dir": 0,
+				"player": 0,
+				"tick": 13
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 14
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 14
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 15
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 15
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 16
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 16
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 17
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 17
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 18
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 18
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 19
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 19
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 20
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 20
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 21
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 21
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 22
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 22
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 23
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 23
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 24
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 24
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 25
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 25
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 26
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 26
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 27
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 27
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 28
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 28
+			},
+			{
+				"dir": 3,
+				"player": 1,
+				"tick": 29
+			},
+			{
+				"dir": 3,
+				"player": 0,
+				"tick": 29
+			}
+		],
+		"state_bytes": [
+			78,
+			69,
+			79,
+			83,
+			78,
+			65,
+			75,
+			69,
+			1,
+			0,
+			24,
+			0,
+			24,
+			0,
+			0,
+			0,
+			2,
+			0,
+			0,
+			0,
+			12,
+			0,
+			0,
+			0,
+			2,
+			52,
+			128,
+			1,
+			7,
+			48,
+			0,
+			0,
+			2,
+			62,
+			8,
+			0,
+			12,
+			40,
+			32,
+			0,
+			0,
+			0,
+			0,
+			0,
+			1,
+			3,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			20,
+			0,
+			8,
+			0,
+			19,
+			0,
+			8,
+			0,
+			18,
+			0,
+			8,
+			0,
+			1,
+			3,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			3,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			20,
+			0,
+			16,
+			0,
+			19,
+			0,
+			16,
+			0,
+			18,
+			0,
+			16,
+			0,
+			123,
+			87,
+			189,
+			250,
+			201,
+			137,
+			168,
+			158
+		]
+	},
+	"tick": 30
+}
