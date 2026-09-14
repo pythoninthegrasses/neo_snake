@@ -4,7 +4,7 @@ set: ['e', 'u', 'pipefail']
 
 tasks:
   build:
-    desc: "Build the GDExtension shim (extension/SConstruct) linking core/zig-out/lib/libneo_snake.a"
+    desc: "Build the GDExtension shim (extension/SConstruct) linking core/zig-out/lib/libneo_snake.a, for both debug and release targets (TASK-050)"
     summary: |
       task extension:build
 
@@ -28,6 +28,13 @@ tasks:
       template, rather than whatever glibc the build host happens to have;
       left empty it's zig's own default native-target build, unchanged from
       before TASK-045.
+
+      Runs scons twice (target=template_debug, then target=template_release,
+      mirroring build-macos/build-windows/build-web's established pattern)
+      so game/bin/neo_snake.gdextension's linux.release.x86_64 key (TASK-050)
+      resolves to a real binary -- a bare `scons` with no target= previously
+      only ever produced template_debug, since that's godot-cpp's own
+      hardcoded default (third_party/godot-cpp/tools/godotcpp.py).
     platforms: [linux]
     dir: extension
     vars:
@@ -36,7 +43,8 @@ tasks:
       - task: :core:abi-symbols
         vars:
           ZIG_TARGET_FLAG: "{{.ZIG_TARGET_FLAG}}"
-      - scons
+      - scons target=template_debug
+      - scons target=template_release
 
   build-macos:
     desc: "Build the macOS (darwin/arm64) framework-bundle GDExtension via scons, for both debug and release targets (TASK-043)"

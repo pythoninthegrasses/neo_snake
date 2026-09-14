@@ -80,6 +80,16 @@ and burns a real App Store Connect API notarization request each time, and every
 solo-maintainer repo already originates from `main`-tracking branches, not external forks. Every
 push and PR still runs the build+test step (`task ci:macos-check`, i.e. `task check`) unconditionally.
 
+## Addendum (TASK-050): Apple secrets are now configured
+
+The one real gap this decision called out — the seven Apple signing secrets missing from the repo
+— is resolved. `gh secret list` against `pythoninthegrasses/neo_snake` now confirms all seven
+(`APPLE_SIGNING_IDENTITY`, `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `KEYCHAIN_PASSWORD`,
+`APPLE_API_KEY_B64`, `APPLE_API_KEY`, `APPLE_API_ISSUER`) are configured. A push to `main` now runs
+`ci:macos-release` (sign + notarize) for real instead of failing at its own precondition guards, and
+TASK-050's `release.yml` macOS job (`ci:release-macos`) can exercise the same secrets to produce a
+real, notarized, uploadable DMG.
+
 ## Consequences
 
 - `taskfiles/ci.yml` adds four thin `ci:<target>` wrapper tasks (`macos-check`, `macos-release`,

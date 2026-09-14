@@ -1279,3 +1279,48 @@ templates are gitignored workspace-local state, so each checkout (even on the sa
 runner host) needs its own bootstrap before `game:import`/`game:test` can run. See [[decision-032]]
 for the full reasoning, including why the missing Apple signing secrets (the one real gap) don't
 block any of this task's Acceptance Criteria.
+
+## Release assets and README downloads: `.github/workflows/release.yml`, `tools/update_readme_downloads.py` ([[decision-033]], TASK-050)
+
+`extension:build` (Linux) now runs `scons` twice (`target=template_debug` then
+`target=template_release`), matching `build-macos`/`build-windows`/`build-web`'s established
+two-scons-call pattern — previously a bare `scons` always defaulted to `template_debug`
+(godot-cpp's own `tools/godotcpp.py` hardcodes that default), so `game/bin/neo_snake.gdextension`
+had no `linux.release.x86_64` key to point at. `docker/linux/Dockerfile`'s `artifacts` stage now
+extracts both `.so` files.
+
+`game/export_presets.cfg` gained two new presets, authored from scratch (no prior Linux/Windows
+preset existed) and empirically verified via real `--export-release` runs: `[preset.2]` "Linux"
+and `[preset.3]` "Windows", both following the Web preset's `include_filter="*.jsonl"` fix (Godot's
+`all_resources` export filter does not automatically include every extension) and confirmed to
+place the release GDExtension binary flat next to the executable in the export output directory.
+Windows has no code-signing (`codesign/*` disabled), per [[decision-029]].
+
+`taskfiles/release.yml` gained `export-*`/`package-*`/`ship-*` task triads for Linux, Windows, and
+Web, mirroring the existing `ship-macos` shape:
+
+- Linux: `neo_snake-linux-x86_64.tar.gz` (`tar`).
+- Windows: `neo_snake-windows-x86_64.zip` (`zip -j`, flattened paths).
+- Web: `neo_snake-web.zip` (`zip -r` of the whole `build/web/` directory, `-x` self-excluded).
+- macOS: unchanged — Godot's own DMG packaging (TASK-044) already produces `Neo Snake.dmg`.
+
+Filenames were chosen so a substring match unambiguously identifies each platform (`.zip` alone
+isn't unique between Windows and Web).
+
+`.github/workflows/release.yml` (new, separate from `ci.yml`) triggers on `release: {types:
+[published]}` and `workflow_dispatch` (with a `release-tag` input). Four platform jobs each build
+their GDExtension, run `task release:ship-<platform>`, and upload the resulting asset via a thin
+`task ci:release-<platform>` wrapper (`taskfiles/ci.yml`, matching TASK-049's one-`task`-call-per-
+step convention). `linux`/`windows`/`web` run on `ubuntu-latest` via `jdx/mise-action@v2` to install
+the full `.tool-versions`-pinned toolchain; `macos` runs on the existing self-hosted runner and
+reuses `release:ship-macos`'s sign+notarize pipeline. A final `update-readme` job (`needs: [macos,
+linux, windows, web]`, `if: always() && !cancelled() && contains(needs.*.result, 'success')`) runs
+`tools/update_readme_downloads.py` against the release tag and commits+pushes the regenerated
+`README.md` to `main` as `github-actions[bot]` with `[skip ci]`, only if the table actually changed.
+
+`tools/update_readme_downloads.py` queries `gh api repos/{owner}/{repo}/releases/tags/{tag}`,
+matches each asset to a platform by filename substring in a fixed, hardcoded order (not release-API
+order — this is what makes a rerun against the same release byte-identical, satisfying AC#3), and
+rewrites only the content between `README.md`'s `<!-- DOWNLOADS:START -->`/`<!-- DOWNLOADS:END
+-->` markers. A platform missing from a given release (e.g. one job failed) is simply omitted from
+the table rather than erroring. See [[decision-033]] for the full reasoning.

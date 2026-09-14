@@ -17,7 +17,7 @@ Stages:
   src       - repo source copied in
   check     - Tier-A/B/C (core:test, core:difftest, core:abitest)
   build     - the GDExtension shared library, glibc floor pinned
-  artifacts - extract the built .so
+  artifacts - extract the built .so files (debug + release)
 
 Usage:
   docker build --target check .
@@ -96,3 +96,4 @@ RUN task extension:build ZIG_TARGET_FLAG="-Dtarget=${GDEXTENSION_GLIBC_TARGET}"
 FROM scratch AS artifacts
 
 COPY --from=build /build/game/bin/libneo_snake.linux.template_debug.x86_64.so /
+COPY --from=build /build/game/bin/libneo_snake.linux.template_release.x86_64.so /

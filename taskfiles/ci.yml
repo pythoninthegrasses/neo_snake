@@ -52,3 +52,61 @@ tasks:
       push/PR.
     cmds:
       - task oracle:fuzz -- --count 500
+
+  release-macos:
+    desc: "CI entry point: sign, notarize, and upload the macOS release asset (TASK-050)"
+    summary: |
+      task ci:release-macos
+
+      Runs the already-existing release:ship-macos pipeline (TASK-044),
+      then uploads the resulting DMG to the GitHub release RELEASE_TAG
+      names. --clobber lets a re-run (e.g. a workflow_dispatch retry)
+      replace a partial upload without a manual delete first.
+    platforms: [darwin]
+    requires:
+      vars: [RELEASE_TAG]
+    cmds:
+      - task: :release:ship-macos
+      - gh release upload "{{.RELEASE_TAG}}" "{{.ROOT_DIR}}/game/build/macos/Neo Snake.dmg" --clobber
+
+  release-linux:
+    desc: "CI entry point: build the GDExtension, export, package, and upload the Linux release asset (TASK-050)"
+    platforms: [linux]
+    requires:
+      vars: [RELEASE_TAG]
+    cmds:
+      - task: :extension:build
+      - task: :release:ship-linux
+      - gh release upload "{{.RELEASE_TAG}}" "{{.ROOT_DIR}}/game/build/linux/neo_snake-linux-x86_64.tar.gz" --clobber
+
+  release-windows:
+    desc: "CI entry point: cross-build the GDExtension, export, package, and upload the Windows release asset (TASK-050)"
+    platforms: [linux]
+    requires:
+      vars: [RELEASE_TAG]
+    cmds:
+      - task: :extension:build-windows
+      - task: :release:ship-windows
+      - gh release upload "{{.RELEASE_TAG}}" "{{.ROOT_DIR}}/game/build/windows/neo_snake-windows-x86_64.zip" --clobber
+
+  release-web:
+    desc: "CI entry point: build the GDExtension, export, package, and upload the Web release asset (TASK-050)"
+    platforms: [linux]
+    requires:
+      vars: [RELEASE_TAG]
+    cmds:
+      - task: :extension:build-web
+      - task: :release:ship-web
+      - gh release upload "{{.RELEASE_TAG}}" "{{.ROOT_DIR}}/game/build/web/neo_snake-web.zip" --clobber
+
+  update-readme:
+    desc: "CI entry point: regenerate the README download table from a real release (TASK-050)"
+    summary: |
+      task ci:update-readme
+
+      Thin wrapper around tools/update_readme_downloads.py -- all matching/
+      rewrite logic lives in the script, not here.
+    requires:
+      vars: [RELEASE_TAG]
+    cmds:
+      - ./tools/update_readme_downloads.py "{{.RELEASE_TAG}}"
