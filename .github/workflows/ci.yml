@@ -29,6 +29,12 @@ jobs:
           echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
           echo "/opt/homebrew/bin:/opt/homebrew/sbin" >> "$GITHUB_PATH"
 
+      - name: Bootstrap Godot toolchain
+        # game/addons/gdUnit4/ and the Godot binary/export templates are
+        # gitignored -- each checkout's workspace needs its own bootstrap,
+        # the runner host being persistent doesn't carry them over.
+        run: task game:bootstrap
+
       - name: Build and test
         run: task ci:macos-check
 

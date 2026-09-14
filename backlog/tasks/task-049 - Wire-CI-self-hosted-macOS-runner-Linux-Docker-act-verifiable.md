@@ -65,3 +65,10 @@ configured — full reasoning in [[decision-032]] and `docs/build-layout.md`'s n
 Incidental fix: verifying AC#2 surfaced `act`'s own warning that the `.tool-versions`-pinned
 `0.2.84` is vulnerable to CVE-2026-34041/CVE-2026-34042; bumped to `0.2.89` (latest via
 `mise ls-remote act`) as part of this task.
+
+A second real CI run then got past `_guard-env-precedence` and a full GDExtension compile+link, and
+failed at `game:import`: `godot is not bootstrapped. Run ./tools/bootstrap.py game godot`.
+`game/addons/gdUnit4/` and the Godot binary/export templates are gitignored, workspace-local state
+that doesn't persist across checkouts even on the same runner host. Fixed by adding a `task
+game:bootstrap` step to the `macos` job before `task ci:macos-check`. Full reasoning in
+[[decision-032]].

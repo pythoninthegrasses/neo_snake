@@ -98,3 +98,14 @@ push and PR still runs the build+test step (`task ci:macos-check`, i.e. `task ch
   was only caught by watching the first real run on PR #37 fail, not by `act` (which ran on this
   Linux verification host, where the darwin-gated build/test step is a no-op and never reaches the
   guard).
+- A second real run then got past the env-precedence guard, past a full GDExtension compile+link,
+  and failed at `game:import` with `godot is not bootstrapped. Run ./tools/bootstrap.py game godot`.
+  `game/addons/gdUnit4/` and the Godot binary/export templates are gitignored, workspace-local state
+  (same gap hit locally in a fresh `task-049` worktree earlier in this task, fixed there with `task
+  game:bootstrap`) — the runner host being persistent doesn't carry that state across checkouts,
+  since it lives under `$GITHUB_WORKSPACE`, not the runner's home directory. Fixed by adding a `task
+  game:bootstrap` step to the `macos` job, before `task ci:macos-check`. Neither of these two runner-
+  only gaps (`_guard-env-precedence`, Godot bootstrap) was reachable by `act` on this Linux
+  verification host, since `task ci:macos-check` no-ops there before ever reaching either check —
+  they were only found by watching real runs, which is exactly why this task waited for real CI
+  before merging rather than trusting `act` alone.

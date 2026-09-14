@@ -1273,6 +1273,9 @@ on route (b) having been chosen instead. A live self-hosted macOS ARM64 runner a
 picked up the `macos` job on the very first real PR run (visible via real `/opt/homebrew/...`
 output in the job log, even though the repo-scoped `gh api .../actions/runners` call reports zero
 runners); the job's `env:` block sets `TASK_X_ENV_PRECEDENCE: "1"` directly, since the gitignored
-`.env` that key normally lives in doesn't exist on the runner. See [[decision-032]] for the full
-reasoning, including why the missing Apple signing secrets (the one real gap) don't block any of
-this task's Acceptance Criteria.
+`.env` that key normally lives in doesn't exist on the runner. The `macos` job also runs `task
+game:bootstrap` before `task ci:macos-check` — `game/addons/gdUnit4/` and the Godot binary/export
+templates are gitignored workspace-local state, so each checkout (even on the same persistent
+runner host) needs its own bootstrap before `game:import`/`game:test` can run. See [[decision-032]]
+for the full reasoning, including why the missing Apple signing secrets (the one real gap) don't
+block any of this task's Acceptance Criteria.
