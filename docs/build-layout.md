@@ -1159,3 +1159,36 @@ the correct convention, matching the existing `linux.debug.x86_64` key's shape.
 **A `-windows-gnu`-built lib or `.dll` must never be linked into or alongside an MSVC-toolchain
 build** (AC#3): MinGW's Itanium C++ ABI/name-mangling and MSVC's are not compatible, even though the
 plain-C ABI `include/neo_snake.h` exposes across the Zig/C++ boundary is itself unaffected.
+
+## Web spike: Zig+godot-cpp WASM toolchain, no COOP/COEP for nothreads dlink ([[decision-030]], TASK-047)
+
+`taskfiles/web.yml`'s `bootstrap:` task runs `mise install emsdk@4.0.11` (pinned in
+`tools/game_toolchain.lock`'s `EMSDK_VERSION`) — deliberately not written to `.tool-versions`
+(task-002's rationale: emsdk is heavy and only needed on-demand). A build step that needs it
+activates it per-invocation via `mise exec emsdk@{{.EMSDK_VERSION}} -- ...`, never `mise use`.
+
+**The chain (`zig build-lib -target wasm32-emscripten --sysroot $EMSDK/upstream/emscripten` →
+`scons platform=web arch=wasm32 threads=no lto=none target=template_release` against
+`third_party/godot-cpp`) works unmodified** — proven with a throwaway hello-world GDExtension built
+entirely outside this repo (session scratchpad, per the task's own "throwaway" framing; only this
+doc section, the decision, and `taskfiles/web.yml` are real deliverables). No godot-cpp/`web.py`
+changes were needed; `-sSIDE_MODULE=1`, `-sWASM_BIGINT`, and `-sSUPPORT_LONGJMP='wasm'` are applied
+regardless of `threads`, confirming SIDE_MODULE dynamic linking is not inherently thread-gated.
+
+**Settled the docs contradiction empirically, not just by reading source.** Godot's own docs say
+enabling Extensions Support "requires... cross-origin isolation headers," unqualified — but
+`platform/web/detect.py` (engine repo) shows `dlink_enabled` (GDExtension support) and `threads` are
+independent SCons flags; nothing ties GDExtension loading to `-sUSE_PTHREADS=1`/SharedArrayBuffer.
+Exported the spike headlessly with `variant/extensions_support=true`,
+`variant/thread_support=false`, `progressive_web_app/enabled=false` (this maps to exactly the
+`web_dlink_nothreads_release` template, confirmed via `export_plugin.h`'s
+`_get_template_name`), served it with a plain `python3 -m http.server` sending no custom headers at
+all, and loaded it with Playwright/Chromium. Result: `crossOriginIsolated: false`, zero page errors,
+and the console shows the GDExtension loading and its FFI call returning the correct value
+(`hello_value=42`) — full proof the chain works without cross-origin isolation for a nothreads
+build. See [[decision-030]] for the complete reasoning and the Go decision.
+
+**Go**: this repo's eventual web build can ship to itch.io/GitHub Pages (no custom-header hosting
+needed) via `web_dlink_nothreads_release`/`_debug`, provided Thread Support stays disabled and (if a
+PWA is ever added) `progressive_web_app/ensure_cross_origin_isolation_headers` stays `false` so the
+generated service worker doesn't force headers a nothreads build doesn't need.

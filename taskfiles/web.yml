@@ -1,0 +1,23 @@
+version: "3.0"
+
+set: ['e', 'u', 'pipefail']
+
+vars:
+  EMSDK_VERSION:
+    sh: grep '^EMSDK_VERSION=' {{.ROOT_DIR}}/tools/game_toolchain.lock | cut -d'"' -f2
+
+tasks:
+  bootstrap:
+    desc: "Install the pinned Emscripten SDK via mise, without adding emsdk to .tool-versions (TASK-047)"
+    summary: |
+      task web:bootstrap
+
+      Installs emsdk {{.EMSDK_VERSION}} (tools/game_toolchain.lock's
+      EMSDK_VERSION pin) via mise's own emsdk plugin. Deliberately not
+      written to .tool-versions (task-002's rationale: emsdk is heavy and
+      only needed on-demand by the web toolchain, not by every task run) --
+      a build step that needs it invokes `mise exec emsdk@{{.EMSDK_VERSION}}
+      -- ...` instead of relying on shims/PATH activation.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - mise install emsdk@{{.EMSDK_VERSION}}
