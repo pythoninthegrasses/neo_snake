@@ -12,6 +12,12 @@ CLAUDE.md
 /game/reports/
 /game/build/
 
+# Compiled GDExtension binaries -- rebuilt locally by extension:build-*
+# (docs/build-layout.md); only game/bin/neo_snake.gdextension itself (the
+# config pointing at these) is committed. *.so is already covered above,
+# but .dylib/.framework/.dll/.wasm (macOS/Windows/Web targets) are not.
+/game/bin/libneo_snake.*
+
 # tools/capture_parity.sh output (TASK-037): comparison screenshots for
 # manual review, never committed.
 /artifacts/

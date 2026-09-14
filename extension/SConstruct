@@ -15,12 +15,15 @@ env = SConscript("../third_party/godot-cpp/SConstruct", {"api_version": "4.7", "
 # godot-cpp's own generated-bindings object count blows past Linux's
 # ARG_MAX for a bare `ar` invocation ("Argument list too long"); godot-cpp's
 # own web.py platform hits the same wall and works around it the same way,
-# via the same two-line ARCOM_POSIX + TEMPFILE(ARCOM_POSIX) pair (tools/web.py).
-# macOS's default ARG_MAX is large enough that the same object list never
-# hits the wall, and its BSD `ar` doesn't accept GNU ar's response-file
-# invocation this pair produces (TASK-043) -- so only apply it where it's
-# actually load-bearing.
-if env["platform"] != "macos":
+# via the same two-line ARCOM_POSIX + TEMPFILE(ARCOM_POSIX) pair (tools/web.py) --
+# already applied to `env` by the time SConscript() returns it to us, so
+# re-applying it here for platform=web wraps ARCOM_POSIX in a TEMPFILE(ARCOM_POSIX)
+# that refers to itself, and SCons' subst blows the Python recursion limit trying
+# to expand it (TASK-048). macOS's default ARG_MAX is large enough that the same
+# object list never hits the wall, and its BSD `ar` doesn't accept GNU ar's
+# response-file invocation this pair produces (TASK-043) -- so only apply it on
+# linux/windows, where nothing has already handled it.
+if env["platform"] not in ("macos", "web"):
     env["ARCOM_POSIX"] = env["ARCOM"].replace("$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
     env["ARCOM"] = "${TEMPFILE(ARCOM_POSIX)}"
 

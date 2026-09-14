@@ -71,10 +71,18 @@ tasks:
       objects, just Windows' own conventional extension) --
       extension:build-windows (TASK-046) passes "neo_snake.lib" here to
       match.
+
+      NM_BIN (optional, default "nm") is the nm-compatible binary used for
+      the symbol grep. System `nm` can't parse wasm's object format
+      ("file format not recognized") -- extension:build-web (TASK-048)
+      passes "llvm-nm" (emsdk's own bundled LLVM, PATH-resolved via `mise
+      exec emsdk@... --`), which reads wasm archives natively and matches
+      GNU nm's output columns.
     dir: core
     vars:
       ZIG_TARGET_FLAG: '{{.ZIG_TARGET_FLAG | default ""}}'
       CORE_LIB_NAME: '{{.CORE_LIB_NAME | default "libneo_snake.a"}}'
+      NM_BIN: '{{.NM_BIN | default "nm"}}'
     cmds:
       - zig build abi {{.ZIG_TARGET_FLAG}}
       - |
@@ -83,7 +91,7 @@ tasks:
         # darwin); ELF's nm does not. Accept the optional underscore so this
         # check verifies the same ns_* naming guarantee on both platforms
         # rather than only on Linux.
-        bad=$(nm -g --defined-only zig-out/lib/{{.CORE_LIB_NAME}} | awk '{print $3}' | grep -vE '^_?ns_' || true)
+        bad=$({{.NM_BIN}} -g --defined-only zig-out/lib/{{.CORE_LIB_NAME}} | awk '{print $3}' | grep -vE '^_?ns_' || true)
         if [ -n "$bad" ]; then
           echo "Unexpected exported symbols in {{.CORE_LIB_NAME}}:" >&2
           echo "$bad" >&2
