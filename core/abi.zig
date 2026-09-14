@@ -16,12 +16,12 @@ const std = @import("std");
 const world = @import("world");
 const canon = @import("canon");
 
-/// Only value #1 of docs/abi-decisions.md's multiplayer freeze is exercised
-/// today (backlog/decisions/decision-020: full multiplayer is milestone
-/// m-8, not this task). Every player-index check below compares against the
-/// *stored* player_count rather than a literal 0, so relaxing this to > 1
-/// later is additive, not a rewrite — see docs/abi-impl.md.
-const MAX_SUPPORTED_PLAYERS: u8 = 1;
+/// TASK-051/decision-034 relaxed this from 1 to world.MAX_PLAYERS (2) — the
+/// additive change docs/abi-impl.md's original note anticipated: every
+/// player-index check below already compared against the *stored*
+/// player_count rather than a literal 0, so no call site needed to change,
+/// only this bound and core/world.zig's own generalization.
+const MAX_SUPPORTED_PLAYERS: u8 = world.MAX_PLAYERS;
 
 pub const Result = i32;
 pub const NS_OK: Result = 0;
@@ -151,32 +151,55 @@ fn pushEvent(storage: *WorldStorage, tick: u32, player: u8, kind: u8) void {
     storage.event_len += 1;
 }
 
-/// Advances exactly one tick and records the event it produced, if any.
-/// docs/abi-impl.md "Telling win from die apart" explains why `ate` is what
-/// distinguishes the two: core/world.zig's win() and die() both just set
-/// status = .dead, and win() is only ever reached through the eating branch,
-/// so "became dead AND scored this tick" is exactly winning.
-fn stepOneTick(storage: *WorldStorage, player: u8) void {
+/// Advances exactly one tick and records the event(s) it produced, if any,
+/// for every player (decision-034 generalized this from a single hardcoded
+/// player index to a per-player pre/post diff). docs/abi-impl.md "Telling
+/// win from die apart" explains why `ate` is what distinguishes the two:
+/// core/world.zig's advance() never marks a player dead except through
+/// die()/the board-full win branch, and win only ever happens on the same
+/// tick that player ate, so "became dead AND scored this tick" is exactly
+/// winning, per player, independently of what any other player did this
+/// tick.
+fn stepOneTick(storage: *WorldStorage) void {
     const w = &storage.world;
-    const pre_score = w.score;
-    const pre_status = w.status;
+    var pre_alive: [world.MAX_PLAYERS]bool = undefined;
+    var pre_score: [world.MAX_PLAYERS]u32 = undefined;
+    for (0..w.player_count) |i| {
+        pre_alive[i] = w.players[i].alive;
+        pre_score[i] = w.players[i].score;
+    }
+
     world.advance(w);
 
-    const ate = w.score != pre_score;
-    if (ate) pushEvent(storage, w.tick, player, NS_EVENT_EAT);
-    if (pre_status == .playing and w.status == .dead) {
-        pushEvent(storage, w.tick, player, if (ate) NS_EVENT_WIN else NS_EVENT_DIE);
+    for (0..w.player_count) |i| {
+        const ate = w.players[i].score != pre_score[i];
+        if (ate) pushEvent(storage, w.tick, @intCast(i), NS_EVENT_EAT);
+        if (pre_alive[i] and !w.players[i].alive) {
+            pushEvent(storage, w.tick, @intCast(i), if (ate) NS_EVENT_WIN else NS_EVENT_DIE);
+        }
     }
 }
 
-fn buildCanonState(w: *const world.World, players_buf: *[1]canon.Player) canon.State {
-    players_buf[0] = .{
-        .status = w.status,
-        .dir = w.dir,
-        .next_dir = w.next_dir,
-        .score = w.score,
-        .cells = world.cells(w),
-    };
+/// decision-034: an eliminated player's exposed status is always `.dead`,
+/// permanently, until the next reset() — a still-alive player's exposed
+/// status always mirrors the one shared world-level phase (menu / playing /
+/// paused). `world.PlayerState` deliberately has no status field of its own;
+/// this is the single place that projection is computed for the ABI/
+/// canonical-format boundary.
+fn playerStatus(w: *const world.World, player: u8) canon.Status {
+    return if (w.players[player].alive) w.status else .dead;
+}
+
+fn buildCanonState(w: *const world.World, players_buf: *[world.MAX_PLAYERS]canon.Player) canon.State {
+    for (0..w.player_count) |i| {
+        players_buf[i] = .{
+            .status = playerStatus(w, @intCast(i)),
+            .dir = w.players[i].dir,
+            .next_dir = w.players[i].next_dir,
+            .score = w.players[i].score,
+            .cells = world.cells(w, @intCast(i)),
+        };
+    }
     return .{
         .cols = w.cols,
         .rows = w.rows,
@@ -184,14 +207,14 @@ fn buildCanonState(w: *const world.World, players_buf: *[1]canon.Player) canon.S
         .tick = w.tick,
         .rng_state = w.rng.state(),
         .food = w.food,
-        .players = players_buf[0..1],
+        .players = players_buf[0..w.player_count],
     };
 }
 
 // --- World lifecycle --------------------------------------------------
 
 export fn ns_world_size(config: *const Config) callconv(.c) usize {
-    const cell_bytes = world.requiredCells(config.cols, config.rows) * @sizeOf(world.Cell);
+    const cell_bytes = world.requiredCells(config.cols, config.rows) * @as(usize, config.player_count) * @sizeOf(world.Cell);
     return @sizeOf(WorldStorage) + cell_bytes;
 }
 
@@ -205,8 +228,14 @@ export fn ns_world_init(world_ptr: *anyopaque, config: *const Config) callconv(.
     if (config.speed_source != NS_SPEED_SOURCE_SCORE_TABLE) return NS_ERR_INVALID_ARGUMENT;
     // reset()'s starting snake occupies x = 6..8, so cols must leave that
     // placement on the board; rows just needs to be nonzero for rows/2 to
-    // land on a real row.
+    // land on a real row. decision-034's starting-row formula spaces
+    // `player_count` players between row 0 and `rows`, so a two-player match
+    // additionally needs enough rows to keep those rows distinct and clear
+    // of the top/bottom edges — the same generous `<= 8` threshold the
+    // single-player cols check already uses, reused rather than a new
+    // constant.
     if (config.cols <= 8 or config.rows == 0) return NS_ERR_INVALID_ARGUMENT;
+    if (config.player_count > 1 and config.rows <= 8) return NS_ERR_INVALID_ARGUMENT;
     if (config.rng_seed[0] == 0 and config.rng_seed[1] == 0 and config.rng_seed[2] == 0 and config.rng_seed[3] == 0) {
         return NS_ERR_INVALID_ARGUMENT;
     }
@@ -218,11 +247,11 @@ export fn ns_world_init(world_ptr: *anyopaque, config: *const Config) callconv(.
 
     const base: [*]u8 = @ptrCast(world_ptr);
     const cells_ptr: [*]world.Cell = @ptrCast(@alignCast(base + @sizeOf(WorldStorage)));
-    const cells_buf = cells_ptr[0..world.requiredCells(config.cols, config.rows)];
+    const cells_buf = cells_ptr[0 .. world.requiredCells(config.cols, config.rows) * @as(usize, config.player_count)];
 
     // Starts in .menu, matching the reference app's own startup: the first
     // ns_queue_dir call is what transitions it to playing (decision-015).
-    world.initWorld(&storage.world, cells_buf, config.cols, config.rows, config.wrap != 0, config.rng_seed, .menu);
+    world.initWorld(&storage.world, cells_buf, config.cols, config.rows, config.player_count, config.wrap != 0, config.rng_seed, .menu);
     return NS_OK;
 }
 
@@ -242,7 +271,7 @@ export fn ns_queue_dir(world_ptr: *anyopaque, player: u8, dir: u8) callconv(.c) 
     const storage = storageOf(world_ptr);
     if (player >= storage.player_count) return NS_ERR_INVALID_ARGUMENT;
     if (dir > NS_DIR_RIGHT) return NS_ERR_INVALID_ARGUMENT;
-    world.queueDir(&storage.world, @enumFromInt(dir));
+    world.queueDir(&storage.world, player, @enumFromInt(dir));
     return NS_OK;
 }
 
@@ -265,12 +294,12 @@ export fn ns_step(world_ptr: *anyopaque, inputs: [*]const Input, input_count: us
     i = 0;
     while (i < input_count) : (i += 1) {
         const inp = inputs[i];
-        world.queueDir(&storage.world, @enumFromInt(inp.dir));
+        world.queueDir(&storage.world, inp.player, @enumFromInt(inp.dir));
     }
     // Only advance if the world was already playing before this call's
     // inputs landed — the call that starts the game from the menu must not
     // itself consume a tick (docs/abi-header.md).
-    if (was_playing) stepOneTick(storage, 0);
+    if (was_playing) stepOneTick(storage);
     return NS_OK;
 }
 
@@ -290,11 +319,14 @@ export fn ns_pump(world_ptr: *anyopaque, dt_us: u32, out_steps: *u32) callconv(.
     const dt = @min(dt_us, world.MAX_DT_US);
     w.acc_us += dt;
     var steps: u32 = 0;
-    var step_us = world.tickPeriodUs(w.score);
+    // The tick period is read from player 0's score, matching
+    // core/world.zig's own pump(): speed is not a per-player notion (a
+    // shared-screen match shares one clock either way, decision-034).
+    var step_us = world.tickPeriodUs(w.players[0].score);
     while (w.acc_us >= step_us and w.status == .playing and steps < world.MAX_STEPS) {
         w.acc_us -= step_us;
-        stepOneTick(storage, 0);
-        step_us = world.tickPeriodUs(w.score);
+        stepOneTick(storage);
+        step_us = world.tickPeriodUs(w.players[0].score);
         steps += 1;
     }
     out_steps.* = steps;
@@ -307,13 +339,14 @@ export fn ns_player_view_get(world_ptr: *const anyopaque, player: u8, out_view: 
     const storage = storageOfConst(world_ptr);
     if (player >= storage.player_count) return NS_ERR_INVALID_ARGUMENT;
     const w = &storage.world;
+    const p = &w.players[player];
     out_view.* = .{
-        .status = @intFromEnum(w.status),
-        .dir = @intFromEnum(w.dir),
-        .next_dir = @intFromEnum(w.next_dir),
+        .status = @intFromEnum(playerStatus(w, player)),
+        .dir = @intFromEnum(p.dir),
+        .next_dir = @intFromEnum(p.next_dir),
         ._pad0 = 0,
-        .score = w.score,
-        .body_len = w.cells_len,
+        .score = p.score,
+        .body_len = p.cells_len,
         ._pad1 = 0,
     };
     return NS_OK;
@@ -323,12 +356,12 @@ export fn ns_body_copy(world_ptr: *const anyopaque, player: u8, out_cells: ?[*]C
     const storage = storageOfConst(world_ptr);
     if (player >= storage.player_count) return NS_ERR_INVALID_ARGUMENT;
     const w = &storage.world;
-    const required: usize = w.cells_len;
+    const required: usize = w.players[player].cells_len;
     out_required.* = required;
     if (out_cells == null or out_capacity == 0) return NS_OK;
     if (out_capacity < required) return NS_ERR_BUFFER_TOO_SMALL;
 
-    const live = world.cells(w);
+    const live = world.cells(w, player);
     var idx: usize = 0;
     while (idx < required) : (idx += 1) {
         out_cells.?[idx] = .{ .x = live[idx].x, .y = live[idx].y };
@@ -340,14 +373,14 @@ export fn ns_body_copy(world_ptr: *const anyopaque, player: u8, out_cells: ?[*]C
 
 export fn ns_canon_len(world_ptr: *const anyopaque) callconv(.c) usize {
     const storage = storageOfConst(world_ptr);
-    var players_buf: [1]canon.Player = undefined;
+    var players_buf: [world.MAX_PLAYERS]canon.Player = undefined;
     const state = buildCanonState(&storage.world, &players_buf);
     return canon.encodedLen(state);
 }
 
 export fn ns_serialize(world_ptr: *const anyopaque, out_buf: [*]u8, out_capacity: usize, out_written: *usize) callconv(.c) Result {
     const storage = storageOfConst(world_ptr);
-    var players_buf: [1]canon.Player = undefined;
+    var players_buf: [world.MAX_PLAYERS]canon.Player = undefined;
     const state = buildCanonState(&storage.world, &players_buf);
     const need = canon.encodedLen(state);
     if (out_capacity < need) {
@@ -364,15 +397,30 @@ export fn ns_deserialize(world_ptr: *anyopaque, bytes: [*]const u8, len: usize) 
     const record = bytes[0..len];
     if (!canon.verify(record)) return NS_ERR_DECODE_FAILED;
 
-    var players_buf: [1]canon.Player = undefined;
-    const decoded = canon.decode(record, &players_buf, storage.world.cells_buf) catch return NS_ERR_DECODE_FAILED;
-    // Board size is fixed at ns_world_init time (it sizes the cell buffer);
-    // a record for a different board can't be rehydrated into this world.
-    if (decoded.cols != storage.world.cols or decoded.rows != storage.world.rows) return NS_ERR_DECODE_FAILED;
-    if (decoded.players.len != 1) return NS_ERR_DECODE_FAILED;
-
-    const p = decoded.players[0];
     const w = &storage.world;
+    // canon.decode() packs every player's cells contiguously starting at
+    // cells_out[0], not at each player's own fixed per-player offset in this
+    // world's real storage — so decode into the world's own flat cell region
+    // (reconstructed from player 0's cells_buf, which starts exactly where
+    // ns_world_init placed it) as scratch, and relocate each player's cells
+    // into its real per-player cells_buf afterward (decision-034; this
+    // module's single-player predecessor didn't need this step because with
+    // exactly one player, contiguous-from-0 and "this player's own buffer"
+    // were already the same range).
+    const per_player = w.players[0].cells_buf.len;
+    const flat_cells = w.players[0].cells_buf.ptr[0 .. per_player * @as(usize, w.player_count)];
+
+    var players_buf: [world.MAX_PLAYERS]canon.Player = undefined;
+    const decoded = canon.decode(record, &players_buf, flat_cells) catch return NS_ERR_DECODE_FAILED;
+    // Board size and player count are fixed at ns_world_init time (they size
+    // the cell buffer); a record for a different board/player-count can't be
+    // rehydrated into this world.
+    if (decoded.cols != w.cols or decoded.rows != w.rows) return NS_ERR_DECODE_FAILED;
+    if (decoded.players.len != w.player_count) return NS_ERR_DECODE_FAILED;
+    for (decoded.players) |dp| {
+        if (dp.cells.len > per_player) return NS_ERR_DECODE_FAILED;
+    }
+
     w.wrap = decoded.wrap;
     w.tick = decoded.tick;
     // Built directly rather than via rng.Rng.init: init() asserts a
@@ -385,11 +433,31 @@ export fn ns_deserialize(world_ptr: *anyopaque, bytes: [*]const u8, len: usize) 
     // owes it nothing from the session that produced the record.
     w.acc_us = 0;
     w.food = decoded.food;
-    w.status = p.status;
-    w.dir = p.dir;
-    w.next_dir = p.next_dir;
-    w.score = p.score;
-    w.cells_len = @intCast(p.cells.len);
+
+    // decision-034: a live player's status always mirrors the one shared
+    // world-level phase, and an eliminated player's is always `.dead` — so
+    // the shared phase is recovered from whichever player's decoded status
+    // isn't `.dead` (ascending index; a validly-encoded record has every
+    // alive player agreeing), falling back to `.dead` only if every player
+    // in the record was already eliminated.
+    w.status = .dead;
+    for (decoded.players) |dp| {
+        if (dp.status != .dead) {
+            w.status = dp.status;
+            break;
+        }
+    }
+
+    for (0..w.player_count) |i| {
+        const dp = decoded.players[i];
+        var p = &w.players[i];
+        p.dir = dp.dir;
+        p.next_dir = dp.next_dir;
+        p.score = dp.score;
+        p.alive = dp.status != .dead;
+        p.cells_len = @intCast(dp.cells.len);
+        @memmove(p.cells_buf[0..dp.cells.len], dp.cells);
+    }
 
     storage.event_head = 0;
     storage.event_len = 0;

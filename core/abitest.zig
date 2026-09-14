@@ -159,6 +159,70 @@ test "@sizeOf/@offsetOf on the wire structs match docs/canonical-state.md exactl
     try std.testing.expectEqual(@as(usize, 8), @offsetOf(c.ns_player_view, "body_len"));
 }
 
+test "two independently-controlled players run concurrently through the C ABI (TASK-051)" {
+    var storage: StorageBuf = .{};
+    const config: c.ns_config = .{
+        .abi_version = c.NS_ABI_VERSION,
+        .cols = 12,
+        .rows = 12,
+        .player_count = 2,
+        .wrap = 0,
+        .rng_seed = .{ 1, 2, 3, 4 },
+        .speed_source = c.NS_SPEED_SOURCE_SCORE_TABLE,
+        ._pad = .{ 0, 0, 0 },
+    };
+    try initOk(&storage, &config);
+
+    // Player 0's queued direction starts the shared match for both players
+    // (decision-015's quirk, whole-world per decision-034); the second
+    // event in the same call routes player 1 onto a different heading —
+    // independent per-player input routing (AC#2). The call that starts
+    // the game from the menu never itself consumes a tick, so nothing has
+    // moved yet after this one.
+    const start_inputs = [_]c.ns_input{
+        .{ .player = 0, .dir = c.NS_DIR_RIGHT, ._pad = .{ 0, 0 } },
+        .{ .player = 1, .dir = c.NS_DIR_UP, ._pad = .{ 0, 0 } },
+    };
+    try std.testing.expectEqual(
+        @as(c.ns_result, c.NS_OK),
+        c.ns_step(storage.ptr(), &start_inputs, start_inputs.len),
+    );
+
+    // Four more ticks with no further input: player 0 keeps walking right
+    // toward the wall (cols=12, no wrap -> dies stepping from x=11 to
+    // x=12), player 1 keeps walking up, away from any wall.
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        try std.testing.expectEqual(
+            @as(c.ns_result, c.NS_OK),
+            c.ns_step(storage.ptr(), null, 0),
+        );
+    }
+
+    // Player 0 has just walked off the right edge; player 1 is untouched
+    // and the shared match is still running for it -- proof the per-player
+    // `alive` flag, not the whole world, absorbed the elimination (this is
+    // exactly the projection AC#3's HUD reads through ns_player_view_get).
+    var p0: c.ns_player_view = undefined;
+    var p1: c.ns_player_view = undefined;
+    try std.testing.expectEqual(@as(c.ns_result, c.NS_OK), c.ns_player_view_get(storage.ptr(), 0, &p0));
+    try std.testing.expectEqual(@as(c.ns_result, c.NS_OK), c.ns_player_view_get(storage.ptr(), 1, &p1));
+
+    try std.testing.expectEqual(@as(c.ns_status, c.NS_STATUS_DEAD), p0.status);
+    try std.testing.expectEqual(@as(c.ns_status, c.NS_STATUS_PLAYING), p1.status);
+    try std.testing.expectEqual(@as(c.ns_dir, c.NS_DIR_UP), p1.dir);
+
+    var cells: [8]c.ns_cell = undefined;
+    var required: usize = 0;
+    try std.testing.expectEqual(
+        @as(c.ns_result, c.NS_OK),
+        c.ns_body_copy(storage.ptr(), 1, &cells, cells.len, &required),
+    );
+    try std.testing.expectEqual(p1.body_len, @as(u32, @intCast(required)));
+    try std.testing.expectEqual(@as(u16, 4), cells[0].y); // 8 - 4 ticks moving up
+    try std.testing.expectEqual(@as(u16, 8), cells[0].x); // column unchanged while moving up
+}
+
 // --- corpus replay -----------------------------------------------------
 
 /// Trivial hex decoder, deliberately re-implemented here rather than

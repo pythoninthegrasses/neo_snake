@@ -333,12 +333,12 @@ fn nextTurn(r: *rng.Rng) Turn {
 
 fn driveSingle(seed: [4]u32, buf: []canon.Cell) world.World {
     var w: world.World = undefined;
-    world.initWorld(&w, buf, COLS, ROWS, false, seed, .playing);
+    world.initWorld(&w, buf, COLS, ROWS, 1, false, seed, .playing);
 
     var turns = auxRng(seed, .{ 0x9E3779B1, 0x85EBCA77, 0xC2B2AE3D, 0x27D4EB2F });
     var tick: u32 = 0;
     while (tick < TICKS and w.status == .playing) : (tick += 1) {
-        world.queueDir(&w, turnedDir(w.dir, nextTurn(&turns)));
+        world.queueDir(&w, 0, turnedDir(w.players[0].dir, nextTurn(&turns)));
         world.advance(&w);
         checkStructuralInvariants(&w);
     }
@@ -350,9 +350,9 @@ fn driveSingle(seed: [4]u32, buf: []canon.Cell) world.World {
 /// tick coincidentally restoring the property.
 fn checkStructuralInvariants(w: *world.World) void {
     // #1: body_len == 3 + score/10 (grows by exactly one cell per 10-point eat).
-    std.debug.assert(w.cells_len == 3 + w.score / 10);
+    std.debug.assert(w.players[0].cells_len == 3 + w.players[0].score / 10);
 
-    const live = world.cells(w);
+    const live = world.cells(w, 0);
 
     // #2: no duplicate body cells.
     for (0..live.len) |i| {
@@ -375,10 +375,10 @@ fn checkStructuralInvariants(w: *world.World) void {
 fn stateOf(w: *const world.World, players_buf: *[1]canon.Player) canon.State {
     players_buf[0] = .{
         .status = w.status,
-        .dir = w.dir,
-        .next_dir = w.next_dir,
-        .score = w.score,
-        .cells = world.cells(w),
+        .dir = w.players[0].dir,
+        .next_dir = w.players[0].next_dir,
+        .score = w.players[0].score,
+        .cells = world.cells(w, 0),
     };
     return .{
         .cols = w.cols,
@@ -395,7 +395,7 @@ test "body_len == 3 + score/10 for all 256 seeds" {
     var buf: [COLS * ROWS]canon.Cell = undefined;
     for (SEEDS) |seed| {
         const w = driveSingle(seed, &buf);
-        try std.testing.expectEqual(3 + w.score / 10, w.cells_len);
+        try std.testing.expectEqual(3 + w.players[0].score / 10, w.players[0].cells_len);
     }
 }
 
@@ -403,7 +403,7 @@ test "no duplicate body cells for all 256 seeds" {
     var buf: [COLS * ROWS]canon.Cell = undefined;
     for (SEEDS) |seed| {
         const w = driveSingle(seed, &buf);
-        const live = world.cells(&w);
+        const live = world.cells(&w, 0);
         for (0..live.len) |i| {
             for (i + 1..live.len) |j| {
                 try std.testing.expect(!(live[i].x == live[j].x and live[i].y == live[j].y));
@@ -417,7 +417,7 @@ test "food never placed on a body cell for all 256 seeds" {
     for (SEEDS) |seed| {
         const w = driveSingle(seed, &buf);
         if (w.food) |f| {
-            for (world.cells(&w)) |c| {
+            for (world.cells(&w, 0)) |c| {
                 try std.testing.expect(!(c.x == f.x and c.y == f.y));
             }
         }

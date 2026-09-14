@@ -198,10 +198,10 @@ const Trace = struct {
         // regen_corpus.mjs's initialState() takes status: 'playing' directly
         // rather than going through queueDir's menu-to-playing transition, so
         // the tick-0 anchor is a fresh world at tick 0, not one advance in.
-        world_mod.initWorld(&w, t.cells, t.cols, t.rows, t.wrap, t.seed, .playing);
+        world_mod.initWorld(&w, t.cells, t.cols, t.rows, 1, t.wrap, t.seed, .playing);
 
         for (t.lines, 0..) |line, i| {
-            for (line.dirs) |d| world_mod.queueDir(&w, d);
+            for (line.dirs) |d| world_mod.queueDir(&w, 0, d);
             world_mod.advance(&w);
 
             const got = t.encode(&w);
@@ -224,10 +224,10 @@ const Trace = struct {
     fn encode(t: *Trace, w: *const World) []const u8 {
         t.player = .{
             .status = w.status,
-            .dir = w.dir,
-            .next_dir = w.next_dir,
-            .score = w.score,
-            .cells = world_mod.cells(w),
+            .dir = w.players[0].dir,
+            .next_dir = w.players[0].next_dir,
+            .score = w.players[0].score,
+            .cells = world_mod.cells(w, 0),
         };
         t.players[0] = t.player;
         const state = State{

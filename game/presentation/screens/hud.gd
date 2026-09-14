@@ -12,6 +12,11 @@ var _score_label := Label.new()
 var _best_label := Label.new()
 var _status_label := Label.new()
 
+## TASK-051: player 1's own row. No best-score label -- best-score
+## persistence stays player-0/mode-scoped only (see backlog/decisions).
+var _p2_score_label := Label.new()
+var _p2_status_label := Label.new()
+
 func _ready() -> void:
 	var box := HBoxContainer.new()
 	box.add_theme_constant_override("separation", 16)
@@ -21,6 +26,13 @@ func _ready() -> void:
 	box.add_child(_status_label)
 	update(0, 0, "")
 
+	var p2_box := HBoxContainer.new()
+	p2_box.add_theme_constant_override("separation", 16)
+	add_child(p2_box)
+	p2_box.add_child(_p2_score_label)
+	p2_box.add_child(_p2_status_label)
+	update_p2(0, "")
+
 ## status_text mirrors the S.status equivalent transition currently in
 ## effect (menu/playing/paused/dead) -- not part of the oracle's own HUD,
 ## but explicit in this task's Description ("status text matching S.status
@@ -29,3 +41,7 @@ func update(score: int, best: int, status_text: String) -> void:
 	_score_label.text = "Score %d" % score
 	_best_label.text = "Best %d" % best
 	_status_label.text = status_text
+
+func update_p2(score: int, status_text: String) -> void:
+	_p2_score_label.text = "P2 Score %d" % score
+	_p2_status_label.text = status_text

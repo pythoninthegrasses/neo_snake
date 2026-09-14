@@ -125,3 +125,38 @@ func test_overlay_action_pressed_plays_the_ui_confirm_cue() -> void:
 func test_mode_selected_plays_the_ui_move_cue() -> void:
 	_screen._on_mode_selected("classic")
 	assert_bool(_screen.sfx._players["ui_move"].playing).is_true()
+
+
+## TASK-051 AC#2: two locally-controlled players, independent input routing.
+
+func test_game_screen_wires_a_second_board_view_for_player_1() -> void:
+	assert_object(_screen.board_view_p2).is_not_null()
+	assert_int(_screen.board_view_p2.player).is_equal(1)
+
+
+func test_player_1_direction_input_steers_player_1_without_touching_player_0() -> void:
+	_screen._start_or_restart()
+	_screen._on_direction_queued(SimulationWorld.DIR_DOWN, 1)
+	var p0 := _screen.world.player_view_get(0)
+	var p1 := _screen.world.player_view_get(1)
+	assert_int(p0.next_dir).is_equal(SimulationWorld.DIR_RIGHT)
+	assert_int(p1.next_dir).is_equal(SimulationWorld.DIR_DOWN)
+
+
+func test_player_0_direction_input_still_defaults_to_player_0() -> void:
+	_screen._start_or_restart()
+	_screen._on_direction_queued(SimulationWorld.DIR_UP)
+	var p0 := _screen.world.player_view_get(0)
+	var p1 := _screen.world.player_view_get(1)
+	assert_int(p0.next_dir).is_equal(SimulationWorld.DIR_UP)
+	assert_int(p1.next_dir).is_equal(SimulationWorld.DIR_RIGHT)
+
+
+## TASK-051 AC#3: per-player score/status HUD elements both update.
+
+func test_hud_reflects_both_players_score_and_status_after_start() -> void:
+	_screen._start_or_restart()
+	_screen._refresh_screen()
+	assert_str(_screen.hud._status_label.text).is_equal(GameScreenState.SCREEN_PLAYING.capitalize())
+	assert_str(_screen.hud._p2_status_label.text).is_equal(GameScreenState.SCREEN_PLAYING.capitalize())
+	assert_str(_screen.hud._p2_score_label.text).is_equal("P2 Score 0")
