@@ -7,6 +7,9 @@ vars:
   AUTH_KEY_PATH: "/tmp/neo_snake_auth_key.p8"
   APP_GLOB: "{{.ROOT_DIR}}/game/build/macos/*.app"
   DMG_GLOB: "{{.ROOT_DIR}}/game/build/macos/*.dmg"
+  LINUX_BUILD_DIR: "{{.ROOT_DIR}}/game/build/linux"
+  WINDOWS_BUILD_DIR: "{{.ROOT_DIR}}/game/build/windows"
+  WEB_BUILD_DIR: "{{.ROOT_DIR}}/game/build/web"
 
 tasks:
   ship-macos:
@@ -232,3 +235,109 @@ tasks:
         dmg=$(ls {{.DMG_GLOB}} | head -n1)
         echo "verifying Gatekeeper assessment (AC#1): $dmg"
         spctl -a -vv --type open --context context:primary-signature "$dmg"
+
+  export-linux:
+    desc: "Headless-export the Linux release build via Godot (TASK-050)"
+    summary: |
+      task release:export-linux
+
+      Runs godot --headless --export-release Linux with no explicit
+      output path, so Godot writes to the "Linux" preset's own
+      export_path (game/export_presets.cfg): game/build/linux/. Godot
+      places the exported executable, its .pck, and the referenced
+      release GDExtension .so flat in that directory (not nested under
+      res://bin/ -- confirmed by direct export, not assumed).
+
+      Requires game/bin/libneo_snake.linux.template_release.x86_64.so to
+      already exist (task extension:build).
+    platforms: [linux]
+    deps: [":game:import"]
+    cmds:
+      - mkdir -p {{.LINUX_BUILD_DIR}}
+      - ./tools/run.py godot --headless --path game --export-release Linux
+
+  package-linux:
+    desc: "Package the Linux export into a release tarball (TASK-050)"
+    platforms: [linux]
+    preconditions:
+      - sh: test -f {{.LINUX_BUILD_DIR}}/neo_snake.x86_64
+        msg: "No Linux export found. Run 'task release:export-linux' first."
+    cmds:
+      - tar -C {{.LINUX_BUILD_DIR}} -czf {{.LINUX_BUILD_DIR}}/neo_snake-linux-x86_64.tar.gz
+          neo_snake.x86_64 neo_snake.pck libneo_snake.linux.template_release.x86_64.so
+
+  ship-linux:
+    desc: "Export and package the Linux release asset end to end (TASK-050)"
+    platforms: [linux]
+    cmds:
+      - task: export-linux
+      - task: package-linux
+
+  export-windows:
+    desc: "Headless-export the Windows release build via Godot (TASK-050)"
+    summary: |
+      task release:export-windows
+
+      Windows counterpart to release:export-linux. Requires
+      game/bin/libneo_snake.windows.template_release.x86_64.dll to
+      already exist (task extension:build-windows) -- the export itself
+      runs on Linux like every other Windows build step in this repo
+      (decision-029): Godot's headless exporter only needs the target
+      platform's export templates and the pre-built GDExtension binary,
+      neither of which requires running on Windows itself.
+    platforms: [linux]
+    deps: [":game:import"]
+    cmds:
+      - mkdir -p {{.WINDOWS_BUILD_DIR}}
+      - ./tools/run.py godot --headless --path game --export-release Windows
+
+  package-windows:
+    desc: "Package the Windows export into a release zip (TASK-050)"
+    platforms: [linux]
+    preconditions:
+      - sh: test -f {{.WINDOWS_BUILD_DIR}}/neo_snake.exe
+        msg: "No Windows export found. Run 'task release:export-windows' first."
+    cmds:
+      - zip -j {{.WINDOWS_BUILD_DIR}}/neo_snake-windows-x86_64.zip
+          {{.WINDOWS_BUILD_DIR}}/neo_snake.exe
+          {{.WINDOWS_BUILD_DIR}}/neo_snake.pck
+          {{.WINDOWS_BUILD_DIR}}/libneo_snake.windows.template_release.x86_64.dll
+
+  ship-windows:
+    desc: "Export and package the Windows release asset end to end (TASK-050)"
+    platforms: [linux]
+    cmds:
+      - task: export-windows
+      - task: package-windows
+
+  export-web:
+    desc: "Headless-export the Web release build via Godot (TASK-048/TASK-050)"
+    platforms: [linux]
+    deps: [":game:import"]
+    cmds:
+      - mkdir -p {{.WEB_BUILD_DIR}}
+      - ./tools/run.py godot --headless --path game --export-release Web
+
+  package-web:
+    desc: "Package the Web export directory into a release zip (TASK-050)"
+    summary: |
+      task release:package-web
+
+      Zips the whole build/web/ directory (index.html, .wasm, .pck, .js
+      glue, the audio worklets) as one archive a user can unpack onto any
+      static file host, mirroring the macOS DMG / Linux tarball / Windows
+      zip's "one download, ready to run" shape. -x excludes the archive's
+      own previous copy so a rerun doesn't zip itself into itself.
+    platforms: [linux]
+    preconditions:
+      - sh: test -f {{.WEB_BUILD_DIR}}/index.html
+        msg: "No Web export found. Run 'task release:export-web' first."
+    cmds:
+      - sh -c 'cd "{{.WEB_BUILD_DIR}}" && zip -r neo_snake-web.zip . -x neo_snake-web.zip'
+
+  ship-web:
+    desc: "Export and package the Web release asset end to end (TASK-050)"
+    platforms: [linux]
+    cmds:
+      - task: export-web
+      - task: package-web

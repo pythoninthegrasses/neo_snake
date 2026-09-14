@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: "Tag of an existing GitHub release to build and upload assets for"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.release-tag }}
+
+jobs:
+  macos:
+    name: macOS (sign, notarize, upload)
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    env:
+      TASK_X_ENV_PRECEDENCE: "1"
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup self-hosted runner PATH
+        run: |
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/bin:/opt/homebrew/sbin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap Godot toolchain
+        run: task game:bootstrap
+
+      - name: Sign, notarize, and upload the macOS asset
+        run: task ci:release-macos
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+  linux:
+    name: Linux (build, export, upload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: jdx/mise-action@v2
+
+      - name: Bootstrap Godot toolchain
+        run: task game:bootstrap
+
+      - name: Build, export, package, and upload the Linux asset
+        run: task ci:release-linux
+
+  windows:
+    name: Windows (cross-build, export, upload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: jdx/mise-action@v2
+
+      - name: Install mingw-w64 cross toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++-mingw-w64-x86-64
+
+      - name: Bootstrap Godot toolchain
+        run: task game:bootstrap
+
+      - name: Build, export, package, and upload the Windows asset
+        run: task ci:release-windows
+
+  web:
+    name: Web (build, export, upload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: jdx/mise-action@v2
+
+      - name: Bootstrap Godot and Web toolchains
+        run: |
+          task game:bootstrap
+          task web:bootstrap
+
+      - name: Build, export, package, and upload the Web asset
+        run: task ci:release-web
+
+  update-readme:
+    name: Regenerate README download table
+    needs: [macos, linux, windows, web]
+    if: always() && !cancelled() && contains(needs.*.result, 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - uses: jdx/mise-action@v2
+
+      - name: Regenerate the download table
+        run: task ci:update-readme
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README.md already up to date, nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update README download table for ${RELEASE_TAG} [skip ci]"
+          git push origin HEAD:main

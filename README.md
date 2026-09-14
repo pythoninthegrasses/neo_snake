@@ -4,6 +4,13 @@ What started as a simple smoke test for local LLMs morphed into something incred
 
 🕶️ 🐍
 
+## Downloads
+
+<!-- DOWNLOADS:START -->
+| Platform | Download |
+| --- | --- |
+<!-- DOWNLOADS:END -->
+
 ## Development
 
 Copy `.env.example` to `.env`, then run:
