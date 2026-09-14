@@ -1239,3 +1239,36 @@ zero `pageerror`s, zero `console:error` messages, and a real play session (movem
 death, Game Over overlay, HUD score) rendering and responding to keyboard input correctly. See
 [[decision-031]] for the full reasoning, including a native Linux `signal 11` seen once during setup
 that did not reproduce after a clean rebuild.
+
+## GitHub Actions CI: `taskfiles/ci.yml`, `.actrc`, act-verifiable ([[decision-032]], TASK-049)
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+- **`macos`** job (`runs-on: [self-hosted, macOS, ARM64]`) runs `task ci:macos-check` (a one-line
+  wrapper around the existing `task check`) unconditionally, then `task ci:macos-release` (a
+  wrapper around TASK-044's `task release:ship-macos`) only `if: github.event_name == 'push' &&
+  github.ref == 'refs/heads/main'` — sign+notarize needs the Apple secrets and a real App Store
+  Connect API call, so it does not run on every PR.
+- **`linux`** job (`runs-on: ubuntu-latest`) runs `task ci:linux-docker-build`, a wrapper around
+  `docker/linux/Dockerfile`'s `check` and `artifacts` stages (TASK-045) — all build logic lives in
+  the Dockerfile, not the workflow YAML or the taskfile wrapper.
+
+`.github/workflows/nightly-fuzz.yml` runs `task ci:fuzz` (wrapping `oracle:fuzz`, TASK-018) on a
+daily cron plus `workflow_dispatch`, matching `taskfiles/oracle.yml`'s own note that fuzzing is
+"deliberately NOT part of task check; run this nightly in CI instead."
+
+`taskfiles/ci.yml` exists purely as this one-line-wrapper layer (`ci:macos-check`,
+`ci:macos-release`, `ci:linux-docker-build`, `ci:fuzz`) so every workflow step reads as `task
+ci:<target>` with no inline build logic, and so the exact same commands run identically whether
+invoked by a human, by `act`, or by a real GitHub-hosted/self-hosted runner.
+
+The root `.actrc` maps each of the `[self-hosted, macOS, ARM64]` labels individually to
+`-self-hosted` (native host execution, no Docker container — mirrors `~/git/mt/.actrc`'s per-label
+convention) and `ubuntu-latest` to act's own Ubuntu image. `act push -j macos` runs cleanly on a
+non-Darwin verification host because `task ci:macos-check` is `platforms: [darwin]`-gated and
+correctly no-ops (exit 0) elsewhere, the same way `task check` already no-ops
+`extension:build-macos` on Linux. No separate Windows CI job exists — TASK-046 chose route (a)
+(mingw cross-compilation from Linux), and TASK-049's own Description makes a Windows job conditional
+on route (b) having been chosen instead. See [[decision-032]] for the full reasoning, including why
+the absence of a registered self-hosted runner and of the Apple signing secrets on this GitHub repo
+does not block any of this task's Acceptance Criteria.

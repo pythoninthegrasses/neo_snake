@@ -36,6 +36,8 @@ includes:
     taskfile: ./taskfiles/release.yml
   web:
     taskfile: ./taskfiles/web.yml
+  ci:
+    taskfile: ./taskfiles/ci.yml
 
 tasks:
   default:
