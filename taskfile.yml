@@ -34,6 +34,8 @@ includes:
     taskfile: ./taskfiles/audio.yml
   release:
     taskfile: ./taskfiles/release.yml
+  web:
+    taskfile: ./taskfiles/web.yml
 
 tasks:
   default:
