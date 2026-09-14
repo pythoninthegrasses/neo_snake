@@ -15,41 +15,54 @@ const check = (label, actual, expected) => {
   else { failed++; console.log(`FAIL ${label}\n  expected ${e}\n  actual   ${a}`); }
 };
 
-// A bare playing state with an attached rng stream; `over` patches fields
-// before driving it. `dir`/`nextDir` are copies, not the shared DIRS objects:
-// a fixture whose snake occupies a whole board would otherwise hand DIRS.right
-// to advance() as a body cell and have unshift/pop mutate the constant. Each
-// AC below is its own named block so a reviewer can find "the tail-chase test"
-// by name.
+// A bare playing state (single player unless `over.players` is given) with an
+// attached rng stream; `over` patches top-level fields (players is a whole
+// replacement array) before driving it. dir/nextDir are copies, not the
+// shared DIRS objects: a fixture whose snake occupies a whole board would
+// otherwise hand DIRS.right to advance() as a body cell and have unshift/pop
+// mutate the constant. Each AC below is its own named block so a reviewer can
+// find "the tail-chase test" by name.
 const playingState = (over = {}) => {
   const S = {
-    cols: COLS, rows: ROWS, wrap: false, tick: 0, score: 0,
-    food: null, snake: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }],
-    dir: { ...DIRS.right }, nextDir: { ...DIRS.right },
+    cols: COLS, rows: ROWS, wrap: false, tick: 0,
+    food: null,
+    players: [{
+      alive: true, score: 0,
+      snake: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }],
+      dir: { ...DIRS.right }, nextDir: { ...DIRS.right },
+    }],
     status: 'playing', acc: 0, last: undefined,
   };
   attachRng(S, [1, 2, 3, 4]);
   return Object.assign(S, over);
 };
+/** Shorthand for the single-player fixtures' own player record. */
+const p0 = (S) => S.players[0];
 
-// --- AC#1: the tail-chase split, `eating ? S.snake : S.snake.slice(0, -1)` ---
+// --- AC#1: the tail-chase split, `eating ? snake : snake.slice(0, -1)` ---
 {
   // Not eating: the collision body is the snake minus the tail cell it is
   // about to vacate, so moving into that cell is legal. Head (5,5) moving left
   // onto the tail at (4,5).
   const chase = playingState({
-    snake: [{ x: 5, y: 5 }, { x: 10, y: 5 }, { x: 4, y: 5 }],
-    dir: DIRS.left, nextDir: DIRS.left,
+    players: [{
+      alive: true, score: 0,
+      snake: [{ x: 5, y: 5 }, { x: 10, y: 5 }, { x: 4, y: 5 }],
+      dir: DIRS.left, nextDir: DIRS.left,
+    }],
   });
   advance(chase);
   check('tail-chase split: advancing into the vacating tail survives',
-    [chase.status, chase.snake, chase.score, chase.tick],
+    [chase.status, p0(chase).snake, p0(chase).score, chase.tick],
     ['playing', [{ x: 4, y: 5 }, { x: 5, y: 5 }, { x: 10, y: 5 }], 0, 1]);
 
   // The same cell one segment deeper is still fatal.
   const mid = playingState({
-    snake: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 9, y: 5 }, { x: 10, y: 5 }],
-    dir: DIRS.left, nextDir: DIRS.left,
+    players: [{
+      alive: true, score: 0,
+      snake: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 9, y: 5 }, { x: 10, y: 5 }],
+      dir: DIRS.left, nextDir: DIRS.left,
+    }],
   });
   advance(mid);
   check('tail-chase split: mid-body self-hit dies', mid.status, 'dead');
@@ -58,8 +71,11 @@ const playingState = (over = {}) => {
   // the tail is not at the cell being entered. Head (5,5) moving left onto
   // (4,5), which is now mid-body (the tail is (2,5), two cells away) — fatal.
   const long = playingState({
-    snake: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }, { x: 2, y: 5 }],
-    dir: DIRS.left, nextDir: DIRS.left,
+    players: [{
+      alive: true, score: 0,
+      snake: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }, { x: 2, y: 5 }],
+      dir: DIRS.left, nextDir: DIRS.left,
+    }],
   });
   advance(long);
   check('tail-chase split: entering what is mid-body at length 4 dies', long.status, 'dead');
@@ -70,8 +86,11 @@ const playingState = (over = {}) => {
   // on the tail, and the tail cannot move because eating pins it.
   const eatBody = playingState({
     cols: 2, rows: 3, wrap: true,
-    snake: [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 0 }],
-    dir: DIRS.left, nextDir: DIRS.left,
+    players: [{
+      alive: true, score: 0,
+      snake: [{ x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 0 }],
+      dir: DIRS.left, nextDir: DIRS.left,
+    }],
     food: { x: 0, y: 1 },
   });
   advance(eatBody);
@@ -83,32 +102,37 @@ const playingState = (over = {}) => {
 {
   // JS's remainder takes the sign of the dividend: `-1 % 24 === -1`. The
   // oracle adds COLS/ROWS first, and sim.mjs keeps that exact expression.
-  const S = playingState({ wrap: true, snake: [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 5 }] });
-  S.dir = S.nextDir = DIRS.left;
+  const S = playingState({ wrap: true });
+  p0(S).snake = [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 5 }];
+  p0(S).dir = p0(S).nextDir = DIRS.left;
   advance(S);
-  check('wrap (+COLS remainder): x=0 moving left lands on x=23', S.snake[0], { x: 23, y: 5 });
+  check('wrap (+COLS remainder): x=0 moving left lands on x=23', p0(S).snake[0], { x: 23, y: 5 });
 
-  const back = playingState({ wrap: true, snake: [{ x: 23, y: 5 }, { x: 22, y: 5 }, { x: 21, y: 5 }] });
+  const back = playingState({ wrap: true });
+  p0(back).snake = [{ x: 23, y: 5 }, { x: 22, y: 5 }, { x: 21, y: 5 }];
   advance(back);
-  check('wrap (+COLS remainder): x=23 moving right lands on x=0', back.snake[0], { x: 0, y: 5 });
+  check('wrap (+COLS remainder): x=23 moving right lands on x=0', p0(back).snake[0], { x: 0, y: 5 });
 
-  const vert = playingState({ wrap: true, snake: [{ x: 5, y: 0 }, { x: 4, y: 0 }, { x: 3, y: 0 }] });
-  vert.dir = vert.nextDir = DIRS.up;
+  const vert = playingState({ wrap: true });
+  vert.players[0].snake = [{ x: 5, y: 0 }, { x: 4, y: 0 }, { x: 3, y: 0 }];
+  vert.players[0].dir = vert.players[0].nextDir = DIRS.up;
   advance(vert);
-  check('wrap (+ROWS remainder): y=0 moving up lands on y=23', vert.snake[0], { x: 5, y: 23 });
+  check('wrap (+ROWS remainder): y=0 moving up lands on y=23', p0(vert).snake[0], { x: 5, y: 23 });
 
-  const down = playingState({ wrap: true, snake: [{ x: 5, y: 23 }, { x: 4, y: 23 }, { x: 3, y: 23 }] });
-  down.dir = down.nextDir = DIRS.down;
+  const down = playingState({ wrap: true });
+  down.players[0].snake = [{ x: 5, y: 23 }, { x: 4, y: 23 }, { x: 3, y: 23 }];
+  down.players[0].dir = down.players[0].nextDir = DIRS.down;
   advance(down);
-  check('wrap (+ROWS remainder): y=23 moving down lands on y=0', down.snake[0], { x: 5, y: 0 });
+  check('wrap (+ROWS remainder): y=23 moving down lands on y=0', p0(down).snake[0], { x: 5, y: 0 });
 
   // The naive remainder this expression avoids, recorded as a number so the
   // contrast is explicit rather than implied.
   check('naive remainder would go negative', (-1) % COLS, -1);
 
   // Wall mode is the contrast for the same head/step.
-  const wall = playingState({ snake: [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 5 }] });
-  wall.dir = wall.nextDir = DIRS.left;
+  const wall = playingState();
+  wall.players[0].snake = [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 5 }];
+  wall.players[0].dir = wall.players[0].nextDir = DIRS.left;
   advance(wall);
   check('wall mode: the same step dies instead of wrapping', wall.status, 'dead');
 }
@@ -117,24 +141,24 @@ const playingState = (over = {}) => {
 {
   const S = playingState();
   queueDir(S, 'left');    // exact opposite of dir=right -> rejected
-  check('180 reject (playing): opposite of dir rejected', S.nextDir, DIRS.right);
+  check('180 reject (playing): opposite of dir rejected', p0(S).nextDir, DIRS.right);
 
   queueDir(S, 'up');      // legal against dir=right
   queueDir(S, 'right');   // opposite of nextDir=up, but dir is still right -> accepted
-  check('180 reject (playing): reference is dir, not nextDir', S.nextDir, DIRS.right);
+  check('180 reject (playing): reference is dir, not nextDir', p0(S).nextDir, DIRS.right);
   advance(S);
-  check('180 reject (playing): queued dir commits on advance', S.dir, DIRS.right);
+  check('180 reject (playing): queued dir commits on advance', p0(S).dir, DIRS.right);
 
   // A committed right leaves left as the exact opposite, rejected against dir.
   queueDir(S, 'left');
-  check('180 reject (playing): left rejected once dir is right', S.nextDir, DIRS.right);
+  check('180 reject (playing): left rejected once dir is right', p0(S).nextDir, DIRS.right);
 
   // Paused: the guard reads nextDir, and queueing never starts the game nor
   // advances a tick.
   const paused = playingState({ status: 'paused' });
   queueDir(paused, 'up');     // nextDir=right -> legal
   queueDir(paused, 'down');   // opposite of nextDir=up -> rejected
-  check('180 reject (paused): reference is nextDir', paused.nextDir, DIRS.up);
+  check('180 reject (paused): reference is nextDir', p0(paused).nextDir, DIRS.up);
   check('180 reject (paused): stays paused', paused.status, 'paused');
 
   // togglePause covers playing <-> paused only.
@@ -149,7 +173,7 @@ const playingState = (over = {}) => {
   // An unknown direction name is ignored by the same choke point.
   const unknown = playingState();
   queueDir(unknown, 'diagonal');
-  check('queueDir ignores unknown direction names', unknown.nextDir, DIRS.right);
+  check('queueDir ignores unknown direction names', p0(unknown).nextDir, DIRS.right);
 }
 
 // --- AC#4: decision-015 — the menu-direction-overwrite quirk reproduces exactly ---
@@ -161,9 +185,9 @@ const playingState = (over = {}) => {
   queueDir(S, 'up');
   check('menu overwrite (decision-015): start via Up lands in playing', S.status, 'playing');
   check('menu overwrite (decision-015): dir/nextDir are right, not up',
-    [S.dir, S.nextDir], [DIRS.right, DIRS.right]);
+    [p0(S).dir, p0(S).nextDir], [DIRS.right, DIRS.right]);
   advance(S);
-  check('menu overwrite (decision-015): first tick moves right', S.snake[0], { x: 9, y: 12 });
+  check('menu overwrite (decision-015): first tick moves right', p0(S).snake[0], { x: 9, y: 12 });
 
   // Every direction that passes the 180-degree guard is clobbered the same
   // way. Left is the exception that proves both rules: from a right-facing
@@ -174,38 +198,38 @@ const playingState = (over = {}) => {
     const fromMenu = initialState({ seed: [1, 2, 3, 4], status: 'menu' });
     queueDir(fromMenu, name);
     check(`menu overwrite (decision-015): start via ${name} forced right`,
-      [fromMenu.status, fromMenu.dir, fromMenu.nextDir], ['playing', DIRS.right, DIRS.right]);
+      [fromMenu.status, p0(fromMenu).dir, p0(fromMenu).nextDir], ['playing', DIRS.right, DIRS.right]);
   }
 
   const fromLeft = initialState({ seed: [1, 2, 3, 4], status: 'menu' });
   queueDir(fromLeft, 'left');
   check('menu overwrite (decision-015): Left is 180-rejected, so menu is unchanged',
-    [fromLeft.status, fromLeft.dir, fromLeft.nextDir], ['menu', DIRS.right, DIRS.right]);
+    [fromLeft.status, p0(fromLeft).dir, p0(fromLeft).nextDir], ['menu', DIRS.right, DIRS.right]);
 
   // The dead-state counterpart behaves identically.
   const fromDead = initialState({ seed: [1, 2, 3, 4], status: 'dead' });
   queueDir(fromDead, 'up');
   check('menu overwrite (decision-015): dead-state start forced right too',
-    [fromDead.status, fromDead.dir, fromDead.nextDir], ['playing', DIRS.right, DIRS.right]);
+    [fromDead.status, p0(fromDead).dir, p0(fromDead).nextDir], ['playing', DIRS.right, DIRS.right]);
 
   // The clobber needs the start transition: already playing, Up from dir=right
   // is a plain legal turn that survives to the next advance.
   const playing = playingState();
   queueDir(playing, 'up');
-  check('menu overwrite (decision-015): no clobber while playing', playing.nextDir, DIRS.up);
+  check('menu overwrite (decision-015): no clobber while playing', p0(playing).nextDir, DIRS.up);
 
   // Non-directional starts (the overlay button / Space) go through start()
   // directly, where right is simply the intended direction.
   const btn = initialState({ seed: [1, 2, 3, 4], status: 'menu' });
   start(btn);
-  check('start() from menu plays with dir right', [btn.status, btn.dir], ['playing', DIRS.right]);
+  check('start() from menu plays with dir right', [btn.status, p0(btn).dir], ['playing', DIRS.right]);
 }
 
 // --- initialState/reset: the oracle's reset() starting position and food draw ---
 {
   const S = initialState({ seed: [1, 2, 3, 4] });
   check('reset starting position',
-    [S.status, S.score, S.tick, S.wrap, S.snake, S.dir, S.nextDir],
+    [S.status, p0(S).score, S.tick, S.wrap, p0(S).snake, p0(S).dir, p0(S).nextDir],
     ['menu', 0, 0, false,
      [{ x: 8, y: 12 }, { x: 7, y: 12 }, { x: 6, y: 12 }], DIRS.right, DIRS.right]);
 
@@ -217,22 +241,22 @@ const playingState = (over = {}) => {
 
   // attachRng re-seeds a decoded state to the same stream initialState builds
   // (the four canonical rng_state words reproduce the stream).
-  const detached = { ...S };
+  const detached = { ...S, players: S.players.map((p) => ({ ...p })) };
   attachRng(detached, rngState(S));
   check('attachRng restores the stream', rngState(detached), rngState(S));
 
   // reset() re-draws food and re-centers the snake, preserving `wrap`.
   const re = initialState({ seed: [1, 2, 3, 4], status: 'playing', wrap: true });
-  re.score = 90;
-  re.snake = [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }];
+  p0(re).score = 90;
+  p0(re).snake = [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }];
   reset(re);
   check('reset clears score and restores the start position',
-    [re.score, re.tick, re.wrap, re.snake],
+    [p0(re).score, re.tick, re.wrap, p0(re).snake],
     [0, 0, true, [{ x: 8, y: 12 }, { x: 7, y: 12 }, { x: 6, y: 12 }]]);
 
   // Food enumeration is row-major (outer y, inner x), so a caller that knows
   // the draw index can predict the cell: index 9 on an empty board is (9, 0).
-  const row = playingState({ snake: [] });
+  const row = playingState({ players: [{ alive: true, score: 0, snake: [], dir: DIRS.right, nextDir: DIRS.right }] });
   placeFood(row);
   const idx = boundedDraw(createRng([1, 2, 3, 4]).next, COLS * ROWS);
   check('placeFood indexes the row-major free list', row.food, { x: idx % COLS, y: 0 });
@@ -244,19 +268,20 @@ const playingState = (over = {}) => {
   const before = rngState(S);
   advance(S);
   check('eat grows, scores, and advances the tick',
-    [S.snake.length, S.score, S.tick, S.status], [4, 10, 1, 'playing']);
+    [p0(S).snake.length, p0(S).score, S.tick, S.status], [4, 10, 1, 'playing']);
   check('eat consumes one rng draw for the new food',
     JSON.stringify(rngState(S)) !== JSON.stringify(before), true);
   check('new food is not on the snake',
-    S.snake.some((p) => p.x === S.food.x && p.y === S.food.y), false);
+    p0(S).snake.some((c) => c.x === S.food.x && c.y === S.food.y), false);
 
   // Wall death in each direction.
   for (const [dir, head] of [['left', { x: 0, y: 5 }], ['right', { x: 23, y: 5 }],
                              ['up', { x: 5, y: 0 }], ['down', { x: 5, y: 23 }]]) {
     const tail1 = { x: head.x - 1, y: head.y };
     const tail2 = { x: head.x - 2, y: head.y };
-    const wall = playingState({ snake: [head, tail1, tail2] });
-    wall.dir = wall.nextDir = DIRS[dir];
+    const wall = playingState({
+      players: [{ alive: true, score: 0, snake: [head, tail1, tail2], dir: DIRS[dir], nextDir: DIRS[dir] }],
+    });
     advance(wall);
     check(`wall death: ${dir}`, wall.status, 'dead');
   }
@@ -270,15 +295,17 @@ const playingState = (over = {}) => {
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++)
       if (!(x === 0 && y === 0)) cells.push({ x, y });   // (0,0) left free for food
-  const full = playingState({ wrap: true, snake: cells.map((c) => ({ ...c })), food: { x: 0, y: 0 } });
+  const full = playingState({
+    wrap: true,
+    players: [{ alive: true, score: 0, snake: cells.map((c) => ({ ...c })), dir: { ...DIRS.up }, nextDir: { ...DIRS.up } }],
+    food: { x: 0, y: 0 },
+  });
   // Reorder so the head is (0,1): stepping up into (0,0) is the eating move.
-  const hi = full.snake.findIndex((c) => c.x === 0 && c.y === 1);
-  full.snake.unshift(...full.snake.splice(hi, 1));
-  full.dir = { ...DIRS.up };
-  full.nextDir = { ...DIRS.up };
+  const hi = p0(full).snake.findIndex((c) => c.x === 0 && c.y === 1);
+  p0(full).snake.unshift(...p0(full).snake.splice(hi, 1));
   advance(full);
   check('win: filling the board ends the game (dead, like the oracle)',
-    [full.status, full.score, full.food, full.snake.length], ['dead', 10, null, 576]);
+    [full.status, p0(full).score, full.food, p0(full).snake.length], ['dead', 10, null, 576]);
 }
 
 // --- step: frame()'s accumulator as a pure function of (state, timestamp) ---
@@ -309,7 +336,7 @@ const playingState = (over = {}) => {
   check('step: 128 ms still short of one BASE_MS tick', [acc.tick, acc.acc], [0, 128]);
   step(acc, 192);
   check('step: crossing BASE_MS advances exactly one tick',
-    [acc.tick, acc.snake[0], acc.acc], [1, { x: 9, y: 12 }, 192 - BASE_MS]);
+    [acc.tick, p0(acc).snake[0], acc.acc], [1, { x: 9, y: 12 }, 192 - BASE_MS]);
 
   // The fixed timestep is framerate-independent: 20 frames of 100/6 ms (~16.7,
   // i.e. 60 fps over ~333 ms) is the same 2 ticks the accumulator budget
@@ -323,7 +350,7 @@ const playingState = (over = {}) => {
   // only just over one MIN_MS tick (score 40): 1 advance, 9 ms left over. The
   // guard would only bite if dt were unclamped; the clamp is the real bound.
   const guard = mk();
-  guard.score = 40;
+  p0(guard).score = 40;
   step(guard, 0);
   step(guard, 32_000);
   check('step: dt clamp (not the guard) bounds a huge gap to one advance',
@@ -351,9 +378,9 @@ const playingState = (over = {}) => {
   step(p, 0);
   step(p, 100);
   p.status = 'paused';
-  const held = JSON.stringify([p.tick, p.acc, p.snake]);
+  const held = JSON.stringify([p.tick, p.acc, p0(p).snake]);
   step(p, 5_000);
-  check('step: paused frames do not advance', JSON.stringify([p.tick, p.acc, p.snake]), held);
+  check('step: paused frames do not advance', JSON.stringify([p.tick, p.acc, p0(p).snake]), held);
 }
 
 // Determinism: the same seed and the same inputs produce the same run, and a
@@ -367,12 +394,144 @@ const playingState = (over = {}) => {
       step(S, i * 16);
       if (S.status !== 'playing') break;
     }
-    return { status: S.status, tick: S.tick, score: S.score, food: S.food,
-             head: S.snake[0], rngState: rngState(S) };
+    return { status: S.status, tick: S.tick, score: p0(S).score, food: S.food,
+             head: p0(S).snake[0], rngState: rngState(S) };
   };
   const a = run([9, 8, 7, 6]);
   check('same seed + inputs reproduce the same run', run([9, 8, 7, 6]), a);
   check('different seed diverges', JSON.stringify(run([1, 1, 1, 2])) !== JSON.stringify(a), true);
+}
+
+// --- AC#5 (TASK-052, decision-034): two-player-only behavior ---
+// Mirrors core/world.zig's own two-player suite: starting-row spacing, an
+// eliminated player doesn't stop the survivor (nor the shared tick), all-dead
+// ends the match without advancing the tick, opponent-body collision is
+// fatal, and head-to-head is a symmetric mutual kill.
+{
+  const two = (over = {}) => {
+    const S = initialState({ seed: [1, 2, 3, 4], status: 'playing', players: 2 });
+    return Object.assign(S, over);
+  };
+
+  const spaced = two();
+  check('two-player reset spaces starting rows using rows*(i+1)/(players+1)',
+    [spaced.players[0].snake[0], spaced.players[1].snake[0]],
+    [{ x: 8, y: 8 }, { x: 8, y: 16 }]);
+  check('both players start alive', [spaced.players[0].alive, spaced.players[1].alive], [true, true]);
+
+  const wallDeath = two({ food: null });
+  wallDeath.players[0].snake = [{ x: COLS - 1, y: 0 }, { x: COLS - 2, y: 0 }, { x: COLS - 3, y: 0 }];
+  wallDeath.players[0].dir = wallDeath.players[0].nextDir = DIRS.right;
+  const preTick = wallDeath.tick;
+  advance(wallDeath);
+  check('a player dying against a wall does not stop the surviving player',
+    [wallDeath.players[0].alive, wallDeath.players[1].alive, wallDeath.status, wallDeath.tick],
+    [false, true, 'playing', preTick + 1]);
+  const corpseHead = wallDeath.players[0].snake[0];
+  advance(wallDeath);
+  check('the corpse stays exactly where it died', wallDeath.players[0].snake[0], corpseHead);
+
+  const allDead = two({ food: null });
+  allDead.players[0].snake = [{ x: COLS - 1, y: 0 }, { x: COLS - 2, y: 0 }, { x: COLS - 3, y: 0 }];
+  allDead.players[0].dir = allDead.players[0].nextDir = DIRS.right;
+  allDead.players[1].snake = [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 5 }];
+  allDead.players[1].dir = allDead.players[1].nextDir = DIRS.left;
+  const preTick2 = allDead.tick;
+  advance(allDead);
+  check('when every player is eliminated the world dies and the tick does not advance',
+    [allDead.players[0].alive, allDead.players[1].alive, allDead.status, allDead.tick],
+    [false, false, 'dead', preTick2]);
+
+  const bodyHit = two({ food: null });
+  bodyHit.players[0].snake = [{ x: 3, y: 5 }, { x: 2, y: 5 }, { x: 1, y: 5 }];
+  bodyHit.players[0].dir = bodyHit.players[0].nextDir = DIRS.right;
+  bodyHit.players[1].snake = [{ x: 10, y: 10 }, { x: 4, y: 5 }, { x: 10, y: 12 }];
+  bodyHit.players[1].dir = bodyHit.players[1].nextDir = DIRS.up;
+  advance(bodyHit);
+  check('entering an opponent\'s body cell is fatal even though it isn\'t self-collision',
+    [bodyHit.players[0].alive, bodyHit.players[1].alive, bodyHit.status],
+    [false, true, 'playing']);
+
+  const headToHead = two({ food: null });
+  headToHead.players[0].snake = [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }];
+  headToHead.players[0].dir = headToHead.players[0].nextDir = DIRS.right;
+  headToHead.players[1].snake = [{ x: 7, y: 5 }, { x: 8, y: 5 }, { x: 9, y: 5 }];
+  headToHead.players[1].dir = headToHead.players[1].nextDir = DIRS.left;
+  advance(headToHead);
+  check('two players moving onto the same cell in the same tick mutually kill each other',
+    [headToHead.players[0].alive, headToHead.players[1].alive, headToHead.status],
+    [false, false, 'dead']);
+
+  // The shared single RNG stream (docs/abi-decisions.md, AC#3): player 0 eats
+  // repeatedly (advancing the one shared rng stream several times) before
+  // player 1 ever eats. If a bug modeled per-player streams instead, player
+  // 1's first food placement would draw from a *fresh* per-player stream and
+  // land on a different cell than the correctly-shared, already-advanced one.
+  //
+  // Rather than pathfind player 0 toward wherever food happens to land (the
+  // 180-degree reject and a wandering player 1 make that fragile — a naive
+  // chase collided the two snakes head-on in an earlier draft of this test),
+  // each iteration below directly places player 0's whole body one step from
+  // the current food cell, facing it, so the very next advance() is a clean
+  // eat. This tests advance()'s/placeFood()'s use of the one shared `rng`
+  // exactly as much as driving it through queueDir would, without the
+  // incidental risk of the two snakes colliding along the way.
+  const oneStepFromFood = (S, avoidCells) => {
+    const food = S.food;
+    const approach = [
+      { dx: -1, dy: 0, dirName: 'right' },
+      { dx: 1, dy: 0, dirName: 'left' },
+      { dx: 0, dy: -1, dirName: 'down' },
+      { dx: 0, dy: 1, dirName: 'up' },
+    ]
+      .map(({ dx, dy, dirName }) => ({ head: { x: food.x + dx, y: food.y + dy }, dirName }))
+      .find(({ head }) =>
+        head.x >= 0 && head.y >= 0 && head.x < S.cols && head.y < S.rows &&
+        !avoidCells.some((c) => c.x === head.x && c.y === head.y));
+    if (!approach) throw new Error(`no safe approach cell found for food ${JSON.stringify(food)}`);
+    const d = DIRS[approach.dirName];
+    const tail1 = { x: approach.head.x - d.x, y: approach.head.y - d.y };
+    const tail2 = { x: approach.head.x - 2 * d.x, y: approach.head.y - 2 * d.y };
+    S.players[0].snake = [approach.head, tail1, tail2];
+    S.players[0].dir = S.players[0].nextDir = d;
+  };
+
+  const runSharedStream = () => {
+    const S = two();
+    S.wrap = false;
+    // Send player 1 into a wall on the very first advance so it becomes a
+    // stationary corner corpse — permanently unable to eat — leaving the
+    // whole rest of the board free for player 0's manual placements.
+    S.players[1].snake = [{ x: COLS - 1, y: ROWS - 1 }, { x: COLS - 2, y: ROWS - 1 }, { x: COLS - 3, y: ROWS - 1 }];
+    S.players[1].dir = S.players[1].nextDir = DIRS.right;
+    S.players[0].snake = [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }];
+    S.players[0].dir = S.players[0].nextDir = DIRS.right;
+    advance(S);
+    const corpse = S.players[1].snake.map((c) => ({ ...c }));
+
+    const eatenAt = [];
+    for (let i = 0; i < 3; i++) {
+      oneStepFromFood(S, corpse);
+      const scoreBefore = S.players[0].score;
+      advance(S);
+      if (S.players[0].score > scoreBefore) eatenAt.push(S.tick);
+    }
+    return { S, corpse, eatenAt };
+  };
+
+  const shared = runSharedStream();
+  check('player 1 dies against the wall on tick 0, becoming a harmless corpse',
+    [shared.S.players[1].alive, shared.S.players[0].alive], [false, true]);
+  check('player 0 eats three times on the shared stream while player 1 (a corpse) never eats',
+    [shared.eatenAt.length, shared.S.players[1].score], [3, 0]);
+
+  // A concrete, checkable pin: replaying the identical seed/setup through a
+  // second world reproduces byte-identical rng state — the same one shared
+  // stream, advanced by the same draws (one at reset, one per eat), not a
+  // fresh stream keyed off which player happened to eat.
+  const replay = runSharedStream();
+  check('replaying the same seed/setup reproduces the same shared-stream state',
+    rngState(replay.S), rngState(shared.S));
 }
 
 console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`);

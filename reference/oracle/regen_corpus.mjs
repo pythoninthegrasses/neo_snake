@@ -149,6 +149,7 @@ export function parseCommandLog(text, file = '<command log>') {
 export function renderTrace(log) {
   const S = initialState({
     seed: log.seed, status: 'playing', wrap: log.wrap, cols: log.cols, rows: log.rows,
+    players: log.players,
   });
 
   // Events keyed by tick; the parser guarantees at most one per (t, p), and
@@ -167,7 +168,7 @@ export function renderTrace(log) {
   let t = 0;
   for (; ; t++) {
     const applied = (queued.get(t) || []).map((ev) => {
-      queueDir(S, ev.in);                 // the log's names are sim.mjs's, untranslated
+      queueDir(S, ev.in, ev.p);           // the log's names are sim.mjs's, untranslated
       return { p: ev.p, dir: ev.in };
     });
 
@@ -203,16 +204,20 @@ function traceLine(S, record, showState) {
 }
 
 /**
- * sim.mjs's single-snake state in the shape canon.mjs's encode() expects.
- * `S.dir`/`S.nextDir` are DIRS vectors (`{x,y}`), not the name encode() wants
- * (docs/canonical-state.md) — dirName() translates them.
+ * sim.mjs's state in the shape canon.mjs's encode() expects. Each player's
+ * `dir`/`nextDir` are DIRS vectors (`{x,y}`), not the name encode() wants
+ * (docs/canonical-state.md) — dirName() translates them. A player's `status`
+ * is world-level in sim.mjs (`S.status`), not per-player, but every player
+ * carries `alive`; a dead player's canonical status is `dead`, matching how
+ * `core/world.zig`'s own canonical encode reports an eliminated player.
  */
 const canonical = (S) => ({
   cols: S.cols, rows: S.rows, wrap: S.wrap, tick: S.tick, rngState: rngState(S),
   food: S.food,
-  players: [{
-    status: S.status, dir: dirName(S.dir), nextDir: dirName(S.nextDir), score: S.score, cells: S.snake,
-  }],
+  players: S.players.map((p) => ({
+    status: p.alive ? S.status : 'dead',
+    dir: dirName(p.dir), nextDir: dirName(p.nextDir), score: p.score, cells: p.snake,
+  })),
 });
 
 /**

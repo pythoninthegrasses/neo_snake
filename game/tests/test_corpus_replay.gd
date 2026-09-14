@@ -125,8 +125,6 @@ func _replay(text: String, name: String, on_tick: Callable = Callable()) -> Dict
 	var lines := text.split("\n")
 	var header: Dictionary = JSON.parse_string(lines[0])
 	var players: int = header["players"]
-	if players != 1:
-		return {"ok": false, "message": "%s: %d-player trace; Tier-D only drives single-player traces" % [name, players]}
 
 	var world := SimulationWorld.new()
 	var seed := PackedInt32Array(header["seed"])

@@ -37,6 +37,8 @@ pub const entries = [_]Entry{
     .{ .name = "reject-180-right-then-left", .path = "tests/corpus/reject-180-right-then-left.jsonl" },
     .{ .name = "tail-blocked-by-middle-segment", .path = "tests/corpus/tail-blocked-by-middle-segment.jsonl" },
     .{ .name = "tail-chase-vacating-tail", .path = "tests/corpus/tail-chase-vacating-tail.jsonl" },
+    .{ .name = "two-player-head-to-head", .path = "tests/corpus/two-player-head-to-head.jsonl" },
+    .{ .name = "two-player-shared-rng-stream", .path = "tests/corpus/two-player-shared-rng-stream.jsonl" },
     .{ .name = "wall-corner-death", .path = "tests/corpus/wall-corner-death.jsonl" },
     .{ .name = "wall-right-edge", .path = "tests/corpus/wall-right-edge.jsonl" },
     .{ .name = "wall-right-edge16x16", .path = "tests/corpus/wall-right-edge16x16.jsonl" },

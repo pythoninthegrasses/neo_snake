@@ -90,6 +90,7 @@ const Trace = struct {
     cols: u16,
     rows: u16,
     wrap: bool,
+    player_count: u8,
     lines: []const Line,
     /// Anchors in tick order, with the line index each came from, so the
     /// diagnostic can ask for "the last anchor at or before line N".
@@ -98,17 +99,21 @@ const Trace = struct {
     anchor_states: []const State,
 
     /// Scratch for the forward replay loop: world_mod's caller-owned body
-    /// buffer, this trace's single-player record, and a reused encode
-    /// buffer — no allocation inside the tick loop.
+    /// buffer, this trace's per-player records (only the first
+    /// `player_count` slots are live), and a reused encode buffer — no
+    /// allocation inside the tick loop.
     cells: []Cell,
-    player: Player,
-    players: [1]Player,
+    players: [world_mod.MAX_PLAYERS]Player,
     buf: []u8,
+
+    /// One queued input: which player, and the direction to queue for it.
+    const Input = struct { p: u8, dir: Dir };
 
     /// One tick line: what to feed the sim, and what the oracle recorded.
     const Line = struct {
-        /// Directions this line queues (via queueDir) before its advance().
-        dirs: []const Dir,
+        /// Inputs this line queues (via queueDir, in recorded order) before
+        /// its advance().
+        in: []const Input,
         /// The line's `c` field. Decimal string in the JSON — a u64 checksum
         /// does not fit in a JSON number — parsed to u64 here.
         checksum: u64,
@@ -130,10 +135,10 @@ const Trace = struct {
         const header = std.json.parseFromSliceLeaky(Header, alloc, header_text, .{}) catch |err|
             std.process.fatal("difftest: {s}: unreadable header: {t}", .{ path, err });
 
-        // world.zig simulates one snake; every committed trace agrees, and
-        // this refuses to quietly replay a multiplayer trace with one.
-        if (header.players != 1) {
-            std.process.fatal("difftest: {s}: {d}-player trace; core/world.zig simulates one snake", .{ path, header.players });
+        // world.zig simulates 1..MAX_PLAYERS players sharing one board; a
+        // trace outside that range can't be replayed against it at all.
+        if (header.players < 1 or header.players > world_mod.MAX_PLAYERS) {
+            std.process.fatal("difftest: {s}: {d}-player trace; core/world.zig simulates 1..{d} players", .{ path, header.players, world_mod.MAX_PLAYERS });
         }
         if (@as(usize, header.cols) * header.rows > max_board_cells) {
             std.process.fatal("difftest: {s}: {d}x{d} board over the {d}-cell cap", .{ path, header.cols, header.rows, max_board_cells });
@@ -152,25 +157,28 @@ const Trace = struct {
                 std.process.fatal("difftest: {s} line {d}: tick {d} out of order (expected {d})", .{ path, line_no, raw_line.t, lines.items.len });
             }
 
-            const dirs = try alloc.alloc(Dir, raw_line.in.len);
-            for (raw_line.in, dirs) |ev, *d| {
-                if (ev.p != 0) std.process.fatal("difftest: {s} line {d}: input for player {d} in a single-player trace", .{ path, line_no, ev.p });
-                d.* = dirFromName(ev.dir) orelse
-                    std.process.fatal("difftest: {s} line {d}: unknown direction \"{s}\"", .{ path, line_no, ev.dir });
+            const inputs = try alloc.alloc(Input, raw_line.in.len);
+            for (raw_line.in, inputs) |ev, *in| {
+                if (ev.p >= header.players) std.process.fatal("difftest: {s} line {d}: input for player {d} in a {d}-player trace", .{ path, line_no, ev.p, header.players });
+                in.* = .{
+                    .p = ev.p,
+                    .dir = dirFromName(ev.dir) orelse
+                        std.process.fatal("difftest: {s} line {d}: unknown direction \"{s}\"", .{ path, line_no, ev.dir }),
+                };
             }
             const checksum = std.fmt.parseInt(u64, raw_line.c, 10) catch |err|
                 std.process.fatal("difftest: {s} line {d}: bad checksum \"{s}\": {t}", .{ path, line_no, raw_line.c, err });
 
             if (raw_line.s) |hex| {
                 const rec = try hexDecode(alloc, hex);
-                const players_out = try alloc.alloc(Player, 1);
-                const cells_out = try alloc.alloc(Cell, header.cols * @as(usize, header.rows));
+                const players_out = try alloc.alloc(Player, header.players);
+                const cells_out = try alloc.alloc(Cell, @as(usize, header.players) * header.cols * @as(usize, header.rows));
                 const state = canon.decode(rec, players_out, cells_out) catch |err|
                     std.process.fatal("difftest: {s} line {d}: anchor state unreadable: {t}", .{ path, line_no, err });
                 try anchor_lines.append(alloc, lines.items.len);
                 try anchor_states.append(alloc, state);
             }
-            try lines.append(alloc, .{ .dirs = dirs, .checksum = checksum, .state_hex = raw_line.s orelse "" });
+            try lines.append(alloc, .{ .in = inputs, .checksum = checksum, .state_hex = raw_line.s orelse "" });
         }
         if (lines.items.len == 0) std.process.fatal("difftest: {s}: no tick lines", .{path});
         if (anchor_lines.items.len == 0) std.process.fatal("difftest: {s}: trace has no \"s\" anchor to compare against", .{path});
@@ -181,13 +189,13 @@ const Trace = struct {
             .cols = header.cols,
             .rows = header.rows,
             .wrap = header.wrap,
+            .player_count = header.players,
             .lines = try lines.toOwnedSlice(alloc),
             .anchor_lines = try anchor_lines.toOwnedSlice(alloc),
             .anchor_states = try anchor_states.toOwnedSlice(alloc),
-            .cells = try alloc.alloc(Cell, world_mod.requiredCells(header.cols, header.rows)),
-            .player = undefined,
+            .cells = try alloc.alloc(Cell, @as(usize, header.players) * world_mod.requiredCells(header.cols, header.rows)),
             .players = undefined,
-            .buf = try alloc.alloc(u8, maxRecordLen(header.cols, header.rows)),
+            .buf = try alloc.alloc(u8, maxRecordLen(header.players, header.cols, header.rows)),
         };
     }
 
@@ -198,10 +206,10 @@ const Trace = struct {
         // regen_corpus.mjs's initialState() takes status: 'playing' directly
         // rather than going through queueDir's menu-to-playing transition, so
         // the tick-0 anchor is a fresh world at tick 0, not one advance in.
-        world_mod.initWorld(&w, t.cells, t.cols, t.rows, 1, t.wrap, t.seed, .playing);
+        world_mod.initWorld(&w, t.cells, t.cols, t.rows, t.player_count, t.wrap, t.seed, .playing);
 
         for (t.lines, 0..) |line, i| {
-            for (line.dirs) |d| world_mod.queueDir(&w, 0, d);
+            for (line.in) |ev| world_mod.queueDir(&w, ev.p, ev.dir);
             world_mod.advance(&w);
 
             const got = t.encode(&w);
@@ -222,14 +230,15 @@ const Trace = struct {
     /// same field-by-field canon.State construction as world.zig's own
     /// round-trip test; world_mod exposes World fields, not a canon.State.
     fn encode(t: *Trace, w: *const World) []const u8 {
-        t.player = .{
-            .status = w.status,
-            .dir = w.players[0].dir,
-            .next_dir = w.players[0].next_dir,
-            .score = w.players[0].score,
-            .cells = world_mod.cells(w, 0),
-        };
-        t.players[0] = t.player;
+        for (0..t.player_count) |i| {
+            t.players[i] = .{
+                .status = playerStatus(w, @intCast(i)),
+                .dir = w.players[i].dir,
+                .next_dir = w.players[i].next_dir,
+                .score = w.players[i].score,
+                .cells = world_mod.cells(w, @intCast(i)),
+            };
+        }
         const state = State{
             .cols = w.cols,
             .rows = w.rows,
@@ -237,7 +246,7 @@ const Trace = struct {
             .tick = w.tick,
             .rng_state = w.rng.state(),
             .food = w.food,
-            .players = &t.players,
+            .players = t.players[0..t.player_count],
         };
         return canon.encode(state, t.buf) catch
             std.process.fatal("difftest: {s}: canonical record exceeded its buffer", .{t.name});
@@ -262,8 +271,8 @@ const Trace = struct {
         const anchor_line = t.anchor_lines[anchor_pos];
         const anchor_state = t.anchor_states[anchor_pos];
 
-        const current_players = try alloc.alloc(Player, 1);
-        const current_cells = try alloc.alloc(Cell, world_mod.requiredCells(t.cols, t.rows));
+        const current_players = try alloc.alloc(Player, t.player_count);
+        const current_cells = try alloc.alloc(Cell, @as(usize, t.player_count) * world_mod.requiredCells(t.cols, t.rows));
         const current_state = canon.decode(got, current_players, current_cells) catch |err|
             std.process.fatal("difftest: {s}: line {d}'s own computed state failed to decode: {t}", .{ t.name, i, err });
 
@@ -298,18 +307,28 @@ fn appendFieldDiff(out: *std.ArrayList(u8), alloc: std.mem.Allocator, a: State, 
     try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "rng_state", a.rng_state, "", b.rng_state });
     try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "food", a.food, "", b.food });
 
-    const ap = a.players[0];
-    const bp = b.players[0];
-    try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "status", ap.status, "", bp.status });
-    try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "dir", ap.dir, "", bp.dir });
-    try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "next_dir", ap.next_dir, "", bp.next_dir });
-    try out.print(alloc, "    {s:<10} anchor={d}\n{s:<15}current={d}\n", .{ "score", ap.score, "", bp.score });
-    try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "cells", ap.cells, "", bp.cells });
+    for (a.players, b.players, 0..) |ap, bp, i| {
+        try out.print(alloc, "    player {d}:\n", .{i});
+        try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "status", ap.status, "", bp.status });
+        try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "dir", ap.dir, "", bp.dir });
+        try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "next_dir", ap.next_dir, "", bp.next_dir });
+        try out.print(alloc, "    {s:<10} anchor={d}\n{s:<15}current={d}\n", .{ "score", ap.score, "", bp.score });
+        try out.print(alloc, "    {s:<10} anchor={any}\n{s:<15}current={any}\n", .{ "cells", ap.cells, "", bp.cells });
+    }
 }
 
-fn maxRecordLen(cols: u16, rows: u16) usize {
+/// decision-034: a live player's exposed status is always the shared
+/// `World.status`, and an eliminated player's is always `.dead` —
+/// core/abi.zig's `playerStatus` projects the canonical wire format the same
+/// way; this driver builds its own canon.Player records directly rather than
+/// depending on the ABI surface (this file's hermeticity doc comment above).
+fn playerStatus(w: *const World, player: u8) canon.Status {
+    return if (w.players[player].alive) w.status else .dead;
+}
+
+fn maxRecordLen(player_count: u8, cols: u16, rows: u16) usize {
     const cells = @as(usize, cols) * rows;
-    return canon.HEADER_BYTES + canon.PLAYER_FIXED_BYTES + 4 * (cells + 1) + canon.CHECKSUM_BYTES;
+    return canon.HEADER_BYTES + @as(usize, player_count) * (canon.PLAYER_FIXED_BYTES + 4 * (cells + 1)) + canon.CHECKSUM_BYTES;
 }
 
 fn hexDecode(alloc: std.mem.Allocator, hex: []const u8) ![]u8 {

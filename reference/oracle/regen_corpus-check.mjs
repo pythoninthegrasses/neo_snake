@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { advance, dirName, initialState, queueDir, rngState } from './sim.mjs';
-import { encode, verify } from './canon.mjs';
+import { decode, encode, verify } from './canon.mjs';
 import {
   CORPUS_VERSION, generate, parseCommandLog, renderTrace,
 } from './regen_corpus.mjs';
@@ -192,6 +192,7 @@ const manifestFiles = () => JSON.parse(read(MANIFEST)).files;
 
     const S = initialState({
       seed: log.seed, status: 'playing', wrap: log.wrap, cols: log.cols, rows: log.rows,
+      players: log.players,
     });
     const queued = new Map();
     for (const ev of log.events) {
@@ -201,14 +202,17 @@ const manifestFiles = () => JSON.parse(read(MANIFEST)).files;
 
     for (const tick of ticks) {
       const applied = (queued.get(tick.t) || []).map((ev) => {
-        queueDir(S, ev.in);
+        queueDir(S, ev.in, ev.p);
         return { p: ev.p, dir: ev.in };
       });
       advance(S);
       const bytes = encode({
         cols: S.cols, rows: S.rows, wrap: S.wrap, tick: S.tick, rngState: rngState(S),
         food: S.food,
-        players: [{ status: S.status, dir: dirName(S.dir), nextDir: dirName(S.nextDir), score: S.score, cells: S.snake }],
+        players: S.players.map((p) => ({
+          status: p.alive ? S.status : 'dead',
+          dir: dirName(p.dir), nextDir: dirName(p.nextDir), score: p.score, cells: p.snake,
+        })),
       });
       if (checksum(bytes) !== tick.c) mismatches.push(`${entry.name} t${tick.t}: checksum`);
       if (JSON.stringify(applied) !== JSON.stringify(tick.in)) mismatches.push(`${entry.name} t${tick.t}: inputs`);
@@ -238,13 +242,30 @@ const manifestFiles = () => JSON.parse(read(MANIFEST)).files;
   check('a trace spans more than one 64-tick anchor block',
     names.some((n) => readTrace(n).ticks.filter((t) => t.s !== undefined).length > 2), true);
 
-  // sim.mjs simulates one snake, so every committed trace is single-player;
-  // `p` is still explicit on every event rather than implicit.
-  check('every committed trace is single-player for now',
-    [...new Set(names.map((n) => headerOf(n).players))], [1]);
+  check('a two-player trace exists alongside the single-player family',
+    names.some((n) => headerOf(n).players === 2), true);
   const usedP = new Set();
   for (const n of names) for (const t of readTrace(n).ticks) for (const i of t.in) usedP.add(i.p);
-  check('every recorded input names player 0 explicitly', [...usedP], [0]);
+  check('every recorded input names its player explicitly (0 and 1 both used)',
+    [...usedP].sort(), [0, 1]);
+}
+
+// --- AC#3 (TASK-052): the committed two-player trace exercises one shared
+// RNG stream, not per-player streams — player 0 eats several times while
+// player 1 (a corpse from tick 0) never does, so every food placement in
+// this trace is drawn from a stream player 0 alone advances. ---
+{
+  const { ticks } = readTrace('two-player-shared-rng-stream');
+  const anchors = ticks.filter((t) => t.s !== undefined).map((t) => decode(Buffer.from(t.s, 'hex')));
+  const first = anchors[0];
+  const last = anchors[anchors.length - 1];
+
+  check('player 1 never scores across the trace',
+    [...new Set(anchors.map((a) => a.players[1].score))], [0]);
+  check('player 1 dies against the wall and stays a corpse through the last anchor',
+    [first.players[1].status, last.players[1].status], ['playing', 'dead']);
+  check('player 0 eats several times on the shared stream after player 1 is already dead',
+    last.players[0].score > first.players[0].score, true);
 }
 
 // --- parseCommandLog: the schema and the rejections the spec requires ---
