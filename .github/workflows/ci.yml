@@ -14,6 +14,10 @@ jobs:
     name: macOS (build, test, sign, notarize)
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 30
+    env:
+      # No .env file exists on the runner (it's gitignored, see .env.example) --
+      # task check's own guard step fails loudly without this.
+      TASK_X_ENV_PRECEDENCE: "1"
 
     steps:
       - uses: actions/checkout@v6

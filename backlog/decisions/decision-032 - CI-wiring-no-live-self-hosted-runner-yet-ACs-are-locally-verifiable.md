@@ -1,6 +1,6 @@
 ---
 id: decision-032
-title: CI wiring is locally verifiable now without a live self-hosted runner or Apple secrets
+title: CI wiring is locally verifiable now; a live self-hosted runner already exists but Apple secrets do not
 status: Accepted
 date: 2026-09-13
 ---
@@ -9,22 +9,35 @@ date: 2026-09-13
 
 TASK-049 wires GitHub Actions CI: a self-hosted `[macOS, ARM64]` job that builds, tests, signs,
 and notarizes; a Linux job running the Docker build (TASK-045); and a nightly `task oracle:fuzz`
-job — following `~/git/mt`'s model. Two things this repo does not yet have looked, at first
-glance, like they could block this task:
+job — following `~/git/mt`'s model. Two things looked, at first glance, like they could block this
+task:
 
-- `gh api repos/pythoninthegrasses/neo_snake/actions/runners` returns `{"total_count":0,"runners":[]}`
-  — no self-hosted runner is registered on this GitHub repo, unlike `~/git/mt`, which has a real,
-  live macOS ARM64 self-hosted runner backing its own `[macOS, ARM64]` jobs.
+- `gh api repos/pythoninthegrasses/neo_snake/actions/runners` returns `{"total_count":0,"runners":[]}`,
+  which read as "no self-hosted runner is registered." This was **wrong** — see below.
 - `gh secret list` returns nothing — none of the seven Apple signing secrets
   (`APPLE_SIGNING_IDENTITY`, `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
   `KEYCHAIN_PASSWORD`, `APPLE_API_KEY_B64`, `APPLE_API_KEY`, `APPLE_API_ISSUER`) that
-  `task release:ship-macos` (TASK-044) requires are configured on this repo yet.
+  `task release:ship-macos` (TASK-044) requires are configured on this repo yet. This one holds up.
+
+**Correction after the first real PR run (`gh run view` on PR #37's CI run,
+`34794873670`)**: the `macos` job actually picked up and ran on a live runner within seconds —
+`Post Run actions/checkout@v6` shows `/opt/homebrew/bin/git version` executing, real macOS/Homebrew
+output, not a queued-forever job. A self-hosted macOS ARM64 runner already exists and is reachable
+by this repo (registered at an org level the repo-scoped `actions/runners` endpoint apparently
+doesn't enumerate, or under a different auth scope than `gh`'s default token has) — the repo-scoped
+API call gave a false negative. That first real run still failed, but for an unrelated, genuinely
+fixable reason: `task ci:macos-check` (`task check`) hit its own `_guard-env-precedence`
+precondition, because `TASK_X_ENV_PRECEDENCE=1` lives in a gitignored `.env` (see `.env.example`)
+that doesn't exist on the runner. Fixed by setting `TASK_X_ENV_PRECEDENCE: "1"` directly in the
+`macos` job's `env:` block in `.github/workflows/ci.yml`, rather than requiring an out-of-band
+`.env` file on the runner machine.
 
 ## Decision
 
-Neither is a blocker for this task, and neither is fixable by an agent anyway (registering a
-self-hosted runner and adding repo secrets are both actions Lance has to take in GitHub's own UI).
-TASK-049's four Acceptance Criteria are all satisfiable through local/static verification alone:
+The missing Apple secrets are not a blocker for this task, and are not fixable by an agent anyway
+(adding repo secrets is an action Lance has to take in GitHub's own UI). TASK-049's four Acceptance
+Criteria are all satisfiable through local/static verification alone, and — as it turned out — the
+macOS job's build+test half is now also verified against the real live runner, not just `act`:
 
 - **AC#1** (every CI step is a one-line `task ci:<target>`) is a property of the workflow YAML and
   `taskfiles/ci.yml` — reviewable by reading the files, no runner needed.
@@ -45,13 +58,14 @@ None of the four require witnessing a real completed run against GitHub's live i
 is an expected, anticipated state (the task's own AC design already routes around it), not the kind
 of genuine infrastructure blocker that should stop the standing auto-chain and wait for a person.
 
-**What still needs Lance, before this workflow does anything for real on GitHub**: register a
-self-hosted macOS ARM64 runner on `pythoninthegrasses/neo_snake` (`gh api` or Settings -> Actions ->
-Runners), and add the seven Apple signing secrets under Settings -> Secrets and variables ->
-Actions. Until then, pushes to `main` will queue the `macos` job forever (or it will simply never
-pick up, depending on GitHub's queueing behavior for a job with no matching runner) — this does not
-block any merge, since `gh api repos/pythoninthegrasses/neo_snake/branches/main/protection` returns
-404 ("Branch not protected"): no required status checks exist on `main`.
+**What still needs Lance, before the sign+notarize half of this workflow does anything for real**:
+add the seven Apple signing secrets under Settings -> Secrets and variables -> Actions. The runner
+itself already exists and already runs `ci:macos-check` on every push/PR. Until the secrets are
+added, a push to `main` will run `ci:macos-release` and fail at its own precondition checks
+(`task release:ship-macos`'s `sh: 'test -n "${APPLE_SIGNING_IDENTITY:-}"'` guards, TASK-044) rather
+than silently no-op — this does not block any merge, since `gh api
+repos/pythoninthegrasses/neo_snake/branches/main/protection` returns 404 ("Branch not protected"):
+no required status checks exist on `main`.
 
 **No separate Windows CI job was added.** TASK-049's own Description makes it conditional: "a
 Windows job only if route (b) native-runner was chosen in task-046." `backlog/tasks/task-046 -
@@ -79,3 +93,8 @@ push and PR still runs the build+test step (`task ci:macos-check`, i.e. `task ch
   CVE-2026-34042 and recommended `0.2.86`+, so `.tool-versions` was bumped to `0.2.89` (latest
   available via `mise ls-remote act`) as part of this task — a one-line, low-risk fix surfaced
   incidentally by the same verification this task already required.
+- The `macos` job's `env:` block sets `TASK_X_ENV_PRECEDENCE: "1"` directly, since no `.env` file
+  (gitignored) exists on the runner and `task check`'s own guard step fails loudly without it — this
+  was only caught by watching the first real run on PR #37 fail, not by `act` (which ran on this
+  Linux verification host, where the darwin-gated build/test step is a no-op and never reaches the
+  guard).

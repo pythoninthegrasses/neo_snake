@@ -1269,6 +1269,10 @@ non-Darwin verification host because `task ci:macos-check` is `platforms: [darwi
 correctly no-ops (exit 0) elsewhere, the same way `task check` already no-ops
 `extension:build-macos` on Linux. No separate Windows CI job exists — TASK-046 chose route (a)
 (mingw cross-compilation from Linux), and TASK-049's own Description makes a Windows job conditional
-on route (b) having been chosen instead. See [[decision-032]] for the full reasoning, including why
-the absence of a registered self-hosted runner and of the Apple signing secrets on this GitHub repo
-does not block any of this task's Acceptance Criteria.
+on route (b) having been chosen instead. A live self-hosted macOS ARM64 runner already exists and
+picked up the `macos` job on the very first real PR run (visible via real `/opt/homebrew/...`
+output in the job log, even though the repo-scoped `gh api .../actions/runners` call reports zero
+runners); the job's `env:` block sets `TASK_X_ENV_PRECEDENCE: "1"` directly, since the gitignored
+`.env` that key normally lives in doesn't exist on the runner. See [[decision-032]] for the full
+reasoning, including why the missing Apple signing secrets (the one real gap) don't block any of
+this task's Acceptance Criteria.

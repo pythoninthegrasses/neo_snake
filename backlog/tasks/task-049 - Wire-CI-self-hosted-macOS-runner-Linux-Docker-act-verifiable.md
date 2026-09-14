@@ -49,17 +49,18 @@ every PR; the macOS job's sign+notarize step only runs on push to `main`, since 
 secrets that don't exist for a PR context. `.github/workflows/nightly-fuzz.yml` runs `task ci:fuzz`
 on a daily cron plus `workflow_dispatch`, satisfying AC#3.
 
-No self-hosted runner is registered on this GitHub repo yet, and none of the seven Apple signing
-secrets are configured — but AC#2 only asks that `act` with the committed `.actrc` resolve the
-`[self-hosted, macOS, ARM64]` labels to native execution and run the job, which it does
-(`act push -j macos` succeeds; `task ci:macos-check` correctly no-ops on this non-Darwin
-verification host, the same `platforms: [darwin]` gating `task check` already relies on for
-`extension:build-macos`). AC#4 is satisfied directly: `actionlint .github/workflows/*.yml` exits 0.
-No separate Windows CI job was added, since TASK-046 chose route (a) (mingw cross-compile), and
-this task's own Description makes a Windows job conditional on route (b). Full reasoning, including
-why the missing runner/secrets are not blockers and what Lance still needs to configure in GitHub's
-UI for this workflow to actually execute for real, is in [[decision-032]] and
-`docs/build-layout.md`'s new TASK-049 section.
+AC#2 was verified twice: locally with `act push -j macos` against the committed `.actrc`
+(`task ci:macos-check` correctly no-ops on this non-Darwin verification host, the same
+`platforms: [darwin]` gating `task check` already relies on for `extension:build-macos`), and for
+real on PR #37's own CI run — which surfaced that a live self-hosted macOS ARM64 runner already
+exists and picks up the `macos` job immediately (the repo-scoped `gh api .../actions/runners` call
+misleadingly reports zero runners). That first real run failed on `_guard-env-precedence`
+(`TASK_X_ENV_PRECEDENCE=1` normally lives in a gitignored `.env` that doesn't exist on the runner);
+fixed by setting it directly in the job's `env:` block. AC#4 is satisfied directly:
+`actionlint .github/workflows/*.yml` exits 0. No separate Windows CI job was added, since TASK-046
+chose route (a) (mingw cross-compile), and this task's own Description makes a Windows job
+conditional on route (b). The only genuine remaining gap is the seven Apple signing secrets, not yet
+configured — full reasoning in [[decision-032]] and `docs/build-layout.md`'s new TASK-049 section.
 
 Incidental fix: verifying AC#2 surfaced `act`'s own warning that the `.tool-versions`-pinned
 `0.2.84` is vulnerable to CVE-2026-34041/CVE-2026-34042; bumped to `0.2.89` (latest via
