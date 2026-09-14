@@ -19,10 +19,11 @@ const c = @cImport({
     @cInclude("neo_snake.h");
 });
 
-/// Every test here uses a small, fixed 12x12 board — comfortably under this
-/// buffer's size (checked at runtime against ns_world_size, not assumed).
+/// Every test here uses a small fixed board (up to 24x24, two players) —
+/// comfortably under this buffer's size (checked at runtime against
+/// ns_world_size, not assumed).
 const StorageBuf = struct {
-    bytes: [4096]u8 align(16) = undefined,
+    bytes: [8192]u8 align(16) = undefined,
 
     fn ptr(self: *StorageBuf) *c.ns_world {
         return @ptrCast(&self.bytes);
@@ -30,11 +31,15 @@ const StorageBuf = struct {
 };
 
 fn makeConfig(cols: u16, rows: u16, wrap: bool, seed: [4]u32) c.ns_config {
+    return makeConfigN(cols, rows, wrap, seed, 1);
+}
+
+fn makeConfigN(cols: u16, rows: u16, wrap: bool, seed: [4]u32, player_count: u8) c.ns_config {
     return .{
         .abi_version = c.NS_ABI_VERSION,
         .cols = cols,
         .rows = rows,
-        .player_count = 1,
+        .player_count = player_count,
         .wrap = if (wrap) 1 else 0,
         .rng_seed = seed,
         .speed_source = c.NS_SPEED_SOURCE_SCORE_TABLE,
@@ -285,25 +290,19 @@ const RawHeader = struct {
     corpus_version: u32,
 };
 
-test "a committed corpus trace replays to its committed checksum using only the C API" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    // core/ and game/ are sibling directories (docs/corpus-format.md); this
-    // is the same small trace difftest.zig's Tier-B pass replays, chosen here
-    // for its size (6 tick lines) and because it exercises a real
-    // reversal-rejection (down, then a rejected up-after-down, then right).
-    const path = "../game/tests/corpus/reject-180-down-then-up.jsonl";
+/// Replays `path` (a committed corpus trace, `core/`-relative) entirely
+/// through the C ABI and checks every line's checksum, and every anchor's
+/// full serialized bytes, against what regen_corpus.mjs recorded.
+fn expectCorpusReplays(alloc: std.mem.Allocator, path: []const u8, expect_players: u8) !void {
     const raw = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, alloc, .limited(1 << 20));
 
     var it = std.mem.splitScalar(u8, raw, '\n');
     const header_text = it.first();
     const header = try std.json.parseFromSliceLeaky(RawHeader, alloc, header_text, .{});
-    try std.testing.expectEqual(@as(u8, 1), header.players);
+    try std.testing.expectEqual(expect_players, header.players);
 
     var storage: StorageBuf = .{};
-    const config = makeConfig(header.cols, header.rows, header.wrap, header.seed);
+    const config = makeConfigN(header.cols, header.rows, header.wrap, header.seed, header.players);
     try initOk(&storage, &config);
 
     var first_line = true;
@@ -355,4 +354,26 @@ test "a committed corpus trace replays to its committed checksum using only the 
             try std.testing.expectEqualSlices(u8, want, out_buf[0..written]);
         }
     }
+}
+
+test "a committed corpus trace replays to its committed checksum using only the C API" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // core/ and game/ are sibling directories (docs/corpus-format.md); this
+    // is the same small trace difftest.zig's Tier-B pass replays, chosen here
+    // for its size (6 tick lines) and because it exercises a real
+    // reversal-rejection (down, then a rejected up-after-down, then right).
+    try expectCorpusReplays(arena.allocator(), "../game/tests/corpus/reject-180-down-then-up.jsonl", 1);
+}
+
+test "a committed players:2 corpus trace replays to its committed checksum using only the C API (TASK-052)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // The same shared-RNG-stream trace Tier-B and the oracle self-check
+    // exercise (AC#3): player 0 eats repeatedly while player 1, dead from
+    // tick 0, never does — proven here through the C ABI's own ns_step /
+    // ns_serialize / ns_checksum, not by importing world.zig directly.
+    try expectCorpusReplays(arena.allocator(), "../game/tests/corpus/two-player-shared-rng-stream.jsonl", 2);
 }
