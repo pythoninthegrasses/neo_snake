@@ -34,9 +34,17 @@ var peer_b: LockstepPeer
 var link_a_to_b: LockstepLink
 var link_b_to_a: LockstepLink
 
+## Stored (not just forwarded to the LockstepLinks) so capture_fixture() can
+## record them -- a replayed fixture needs the original latencies to
+## reconstruct an equivalent session, not just the two peers' logs.
+var latency_a_to_b: int
+var latency_b_to_a: int
+
 var _last_interval_checked: int = -1
 
 func _init(world_a: SimulationWorld, world_b: SimulationWorld, latency_a_to_b: int, latency_b_to_a: int) -> void:
+	self.latency_a_to_b = latency_a_to_b
+	self.latency_b_to_a = latency_b_to_a
 	link_a_to_b = LockstepLink.new(latency_a_to_b)
 	link_b_to_a = LockstepLink.new(latency_b_to_a)
 	peer_a = LockstepPeer.new(world_a, 0, 1, link_a_to_b, link_b_to_a)
@@ -78,3 +86,35 @@ func advance_round() -> Dictionary:
 			return {"tick": tick_a, "checked": true, "match": checksums_match}
 
 	return {"tick": tick_a, "checked": false, "match": true}
+
+## Builds a JSON-safe snapshot of both peers at a checksum-mismatch tick
+## (TASK-054, AC#1): each side's input log and full serialized state, plus
+## the link latencies, so a fixture written from this dict can reconstruct
+## an equivalent session and replay it. Pure data, no file I/O -- the caller
+## decides whether/where to persist it (game/tests/test_desync_fixture.gd).
+##
+## Checksums are stringified: GDScript's 64-bit int round-trips through
+## Godot's JSON parser as a float (JSON has no integer type, and Godot's
+## parser always produces float), which can silently lose precision above
+## 2^53 -- docs/corpus-format.md hits this exact issue for the oracle corpus
+## and fixes it the same way.
+func capture_fixture(tick: int, checksum_a: int, checksum_b: int) -> Dictionary:
+	return {
+		"tick": tick,
+		"latency_a_to_b": latency_a_to_b,
+		"latency_b_to_a": latency_b_to_a,
+		"peer_a": _peer_fixture(peer_a, checksum_a),
+		"peer_b": _peer_fixture(peer_b, checksum_b),
+	}
+
+static func _peer_fixture(peer: LockstepPeer, checksum: int) -> Dictionary:
+	var state_bytes: PackedByteArray = peer.world.serialize()["bytes"]
+	var state: Array = []
+	state.resize(state_bytes.size())
+	for i in range(state_bytes.size()):
+		state[i] = state_bytes[i]
+	return {
+		"checksum": str(checksum),
+		"state_bytes": state,
+		"input_log": peer.input_log(),
+	}

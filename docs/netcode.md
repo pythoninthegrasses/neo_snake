@@ -1,4 +1,4 @@
-# Lockstep netcode (TASK-053)
+# Lockstep netcode (TASK-053, TASK-054)
 
 Two-peer lockstep netcode driving `ns_step` directly, one call per confirmed tick --
 `include/neo_snake.h` documents `ns_step` as the frozen primitive a netcode layer must call itself,
@@ -78,6 +78,35 @@ desync-capture fixture hooks.
 Tick-count offsets between the two peers at an arbitrary stopping point (under asymmetric link
 latency) are a normal timing artifact, not a desync -- `advance_round()` only ever compares when
 `tick_a == tick_b`, so this never produces a false mismatch.
+
+`capture_fixture(tick, checksum_a, checksum_b)` builds a JSON-safe snapshot of both peers at a
+mismatch tick -- see "Desync capture" below.
+
+## Desync capture (TASK-054)
+
+`LockstepSession.capture_fixture(tick, checksum_a, checksum_b) -> Dictionary` builds
+`{tick, latency_a_to_b, latency_b_to_a, peer_a, peer_b}`, where each peer's entry is
+`{checksum, input_log, state_bytes}` (checksum stringified -- Godot's `JSON` parser produces `float`
+for every JSON number, and a `u64` checksum can exceed 2^53, so a string sidesteps precision loss
+the same way `docs/corpus-format.md`'s `"c"` field does). It only knows peer/session-level data; the
+board-construction `config` (cols/rows/player_count/wrap/rng_seed/speed_source) is supplied
+separately by whichever caller built the worlds, since `LockstepSession` never sees their `init()`
+arguments. See `backlog/decisions/decision-037` for the full format and the rationale for a new
+fixture type rather than extending the single-actor oracle-corpus JSONL schema.
+
+`game/tests/test_desync_fixture.gd` is both the fixture's (manual, opt-in) generator and its
+(automatic, every-run) regression check:
+
+- Reruns the exact corrupted-peer scenario from `test_lockstep_session.gd`'s corrupted-input test,
+  captures the fixture at the first `desync_detected` mismatch, and deep-compares it against
+  `game/tests/desync_fixtures/corrupted_player0_input.json`.
+- Only rewrites that committed file when `DESYNC_FIXTURE_REGEN=1` is set -- never as a side effect
+  of a normal `task game:test` run, the same posture `reference/oracle/fuzz.mjs`'s promotion step
+  takes toward the oracle corpus.
+- A future change to `core/world.zig`, the checksum algorithm, or the lockstep protocol that alters
+  the recorded checksums/state/input log fails this test until the committed fixture is regenerated
+  (or the regression is fixed) -- verified directly by hand-corrupting one field of the committed
+  file and confirming `task game:test` fails, then restoring it and confirming it passes again.
 
 ## Testing (`game/tests/test_lockstep_session.gd`)
 
