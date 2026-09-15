@@ -5,25 +5,27 @@
 # ///
 
 """
-Bootstrap pinned local game tooling: Godot export templates, (only if mise's
-godot asset is not usable headless on this platform) a checksum-verified
-fallback Godot binary, the gdUnit4 test framework addon, and the Furnace
-tracker binary.
+Bootstrap pinned local game tooling: git submodules (third_party/godot-cpp),
+Godot export templates, (only if mise's godot asset is not usable headless on
+this platform) a checksum-verified fallback Godot binary, the gdUnit4 test
+framework addon, and the Furnace tracker binary.
 
-Godot itself is installed via mise (this repo's .tool-versions pins
-godot@<GODOT_RELEASE>) -- not by this script -- unless bootstrap finds that
-asset unusable headless, in which case it downloads the pinned fallback
-binary under .tools/game/godot instead. Export templates are never
-distributed by mise, so they are always fetched here as a checksum-verified
-download. gdUnit4 is likewise a checksum-verified download, extracted to
-game/addons/gdUnit4 (not committed to git). Furnace (TASK-040) has no
-mise/aqua package at all, so it is always this script's checksum-verified
-download, extracted to .tools/game/furnace. All pins live in
-tools/game_toolchain.lock, overridable per-entry via same-named environment
-variables.
+Submodules are initialized via `git submodule update --init --recursive`,
+needed because neither a plain clone nor `git worktree add` checks them out
+automatically. Godot itself is installed via mise (this repo's
+.tool-versions pins godot@<GODOT_RELEASE>) -- not by this script -- unless
+bootstrap finds that asset unusable headless, in which case it downloads the
+pinned fallback binary under .tools/game/godot instead. Export templates are
+never distributed by mise, so they are always fetched here as a
+checksum-verified download. gdUnit4 is likewise a checksum-verified
+download, extracted to game/addons/gdUnit4 (not committed to git). Furnace
+(TASK-040) has no mise/aqua package at all, so it is always this script's
+checksum-verified download, extracted to .tools/game/furnace. All pins live
+in tools/game_toolchain.lock, overridable per-entry via same-named
+environment variables.
 
 Usage:
-    ./tools/bootstrap.py game [all|godot|gdunit4|furnace]
+    ./tools/bootstrap.py game [all|submodules|godot|gdunit4|furnace]
 """
 
 import hashlib
@@ -36,7 +38,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from toolchain import (  # noqa: E402
+from toolchain import (
     GAME_TOOLS,
     REPO_ROOT,
     furnace_binary_path,
@@ -62,7 +64,7 @@ def download_verified(url: str, sha256: str, destination: Path) -> None:
         destination.unlink()
     print(f"Downloading {url}")
     try:
-        with urllib.request.urlopen(url) as response:  # noqa: S310
+        with urllib.request.urlopen(url) as response:
             data = response.read()
     except OSError as e:
         die(f"Could not download {url}: {e}")
@@ -204,9 +206,19 @@ def install_godot() -> None:
     print(f"Godot ({binary}) and export templates {require_pin(pins, 'GODOT_TEMPLATE_VERSION')} are ready.")
 
 
+def install_submodules() -> None:
+    subprocess.run(
+        ["git", "submodule", "update", "--init", "--recursive"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+
+
 def bootstrap_game(component: str) -> None:
-    if component not in ("all", "godot", "gdunit4", "furnace"):
-        die("Usage: bootstrap.py game [all|godot|gdunit4|furnace]")
+    if component not in ("all", "submodules", "godot", "gdunit4", "furnace"):
+        die("Usage: bootstrap.py game [all|submodules|godot|gdunit4|furnace]")
+    if component in ("all", "submodules"):
+        install_submodules()
     if component in ("all", "godot"):
         install_godot()
     if component in ("all", "gdunit4"):
