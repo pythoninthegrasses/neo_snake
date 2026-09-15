@@ -5,7 +5,11 @@ extends RefCounted
 ## declare (TASK-033 AC#1) and the table input_router.gd dispatches on.
 ## Mirrors reference/snake.html's KEY table (snake.html:578-582): both
 ## arrow keys and WASD map to the same four directions, Space
-## pauses/starts, R restarts (snake.html:584-591). Kept as data here (not
+## pauses/starts, R restarts (snake.html:584-591). This port splits the two
+## jobs the oracle's Space key does: Space is pause-only, and Enter/Kp Enter
+## select -- project.godot overrides Godot's built-in ui_accept (Enter, Kp
+## Enter *and* Space by default) to drop Space, so it can never also
+## activate a focused overlay button. Kept as data here (not
 ## just implicit in project.godot) so a gdUnit4 test can assert the
 ## project's actual InputMap state stays in sync with what this file
 ## expects, the same role board_geometry.gd's DRAW_LAYER_ORDER plays for

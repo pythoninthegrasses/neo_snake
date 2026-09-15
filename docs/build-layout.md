@@ -506,6 +506,14 @@ directions, Space pauses/starts, R restarts). `project.godot`'s `[input]` sectio
 `game/tests/test_input_defaults.gd` asserts the loaded `InputMap` matches `InputDefaults` exactly in
 both directions, so the two can't silently drift apart.
 
+The oracle's Space key does two jobs — pause/resume, and start/restart from the menu or dead screen.
+This port splits them: Space is pause-only (`GameScreen._on_pause_requested` returns unless the
+shared status is `PLAYING`), and Enter/Kp Enter select, confirming whichever overlay control has
+focus through Godot's built-in `ui_accept`. Because `ui_accept`'s engine default also includes
+Space, `project.godot` declares its own `ui_accept` (Enter + Kp Enter) to replace it — without that
+override Space would still activate the focused button. See
+[[decision-038]] (`backlog/decisions/decision-038 - Space-is-pause-only-Enter-is-select.md`).
+
 `SwipeGesture` is a pure `RefCounted` port of the oracle's `touchstart`/`touchmove`/`touchend`
 handling (`snake.html:603-618`) with no `Node` dependency (AC#4) — same "pure static/no viewport"
 posture as `BoardGeometry`. The oracle's fixed `24` CSS-pixel drag threshold becomes board-scaled per

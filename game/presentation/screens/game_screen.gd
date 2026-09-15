@@ -272,22 +272,27 @@ func _wrap_for(mode_id: String) -> bool:
 			return bool(mode.wrap)
 	return false
 
-## Space (pause_requested): starts from menu/dead, exactly like queueDir()
-## does for any direction (snake.html:576); toggles the app-level pause
-## flag otherwise, mirroring togglePause() (snake.html:559-566) without
-## ever touching the sim's own (unreachable) paused status.
+## Space (pause_requested) is pause-only: it toggles the app-level pause
+## flag while playing and does nothing at all on the menu/dead screens.
+## reference/snake.html's Space handler also started a run from those two
+## screens (snake.html:584-591); Enter/Kp Enter -- Godot's own ui_accept on
+## the overlay's focused button -- is this port's select key instead, so
+## Space no longer carries two meanings. Mirrors togglePause()
+## (snake.html:559-566) without ever touching the sim's own (unreachable)
+## paused status.
+##
+## Pause is an app-level flag, so the sim's status stays PLAYING while
+## paused -- one status check therefore covers both pausing and resuming.
 func _on_pause_requested() -> void:
 	var view := world.player_view_get(0)
 	if view.result != SimulationWorld.OK:
 		return
-	var status := _shared_status()
-	if status == BoardGeometry.STATUS_MENU or status == BoardGeometry.STATUS_DEAD:
-		_start_or_restart()
-	else:
-		_paused = not _paused
-		if _paused:
-			sfx.play("pause")
-		_refresh_screen()
+	if _shared_status() != BoardGeometry.STATUS_PLAYING:
+		return
+	_paused = not _paused
+	if _paused:
+		sfx.play("pause")
+	_refresh_screen()
 
 ## R (restart_requested): reference/snake.html's R handler always calls
 ## start() unconditionally (snake.html:584). Since this port's mode

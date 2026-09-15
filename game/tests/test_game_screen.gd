@@ -45,6 +45,17 @@ func test_direction_input_from_menu_starts_the_game() -> void:
 	assert_bool(_screen.overlay.visible).is_false()
 
 
+## Space is pause-only: it never starts or restarts a run. Enter/Kp Enter
+## (Godot's ui_accept) confirm the overlay's focused button instead.
+
+func test_pause_requested_from_the_menu_does_nothing() -> void:
+	_screen._on_pause_requested()
+	var view := _screen.world.player_view_get(0)
+	assert_int(view.status).is_equal(BoardGeometry.STATUS_MENU)
+	assert_bool(_screen._paused).is_false()
+	assert_bool(_screen.overlay.visible).is_true()
+
+
 func test_pause_requested_while_playing_shows_the_paused_overlay() -> void:
 	_screen._start_or_restart()
 	_screen._on_pause_requested()
