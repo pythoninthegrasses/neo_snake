@@ -52,3 +52,11 @@ func update(score: int, best: int, status_text: String) -> void:
 func update_p2(score: int, status_text: String) -> void:
 	_p2_score_label.text = "P2 Score %d" % score
 	_p2_status_label.text = status_text
+
+## Hidden for a 1-player game, where the world has no player 1 to report on.
+func set_p2_row_visible(shown: bool) -> void:
+	if _p2_box != null:
+		_p2_box.visible = shown
+
+func p2_row_visible() -> bool:
+	return _p2_box != null and _p2_box.visible

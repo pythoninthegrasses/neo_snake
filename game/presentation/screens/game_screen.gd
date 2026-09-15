@@ -40,6 +40,11 @@ extends Control
 const COLS := 24
 const ROWS := 24
 
+## core/world.zig's reset() spawns a 3-cell snake.
+const SNAKE_LEN := 3
+
+const EVENT_DRAIN_CAPACITY := 16
+
 ## Set before add_child() to redirect SaveStore off real user:// data --
 ## mirrors test_save_store.gd's own temp-base-dir isolation convention, the
 ## only seam GameScreen needs since ContentLoader's tuning/palette/modes
@@ -58,6 +63,20 @@ var web_checksum_smoke_test: WebChecksumSmokeTest
 var save_store: SaveStore
 var sfx: SfxPlayer
 var music: MusicPlayer
+
+## Chosen on the menu screen, then fixed for the run (the overlay's
+## 1/2-player buttons only exist on the menu). The menu itself idles on a
+## 1-player world; picking "2 Player Game" re-inits with player_count 2.
+## Every per-player surface -- board_view_p2, the HUD's P2 row, player 1's
+## keyboard input -- is gated on this, because the ABI rejects any call
+## naming a player the world doesn't have (core/abi.zig's
+## `player >= storage.player_count` guard).
+var _player_count := 1
+
+## Cleared only by the TASK-037 parity capture harness: its whole job is
+## producing screenshots comparable against reference/snake.html's own, and
+## the oracle always spawns facing right.
+var _randomize_start := true
 
 var _tuning: Dictionary
 var _palette: Dictionary
@@ -104,7 +123,17 @@ func _ready() -> void:
 	_current_mode_id = _save_data.last_mode if _has_mode(_save_data.last_mode) else content.modes.default_mode
 
 	world = SimulationWorld.new()
-	world.init(COLS, ROWS, 2, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+	world.init(COLS, ROWS, _player_count, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+
+	## board_view only paints the board's own COLS*cell x ROWS*cell rect
+	## (0,0 to 520,520); without this, the HUD strip below it (520-600) had
+	## nothing drawn behind it and showed the Viewport's default grey clear
+	## color instead of the theme's own background.
+	var background := ColorRect.new()
+	background.color = Color(_palette.board.background)
+	background.size = size
+	background.position = Vector2.ZERO
+	add_child(background)
 
 	board_view = BoardView.new()
 	board_view.custom_minimum_size = Vector2(520, 520)
@@ -115,7 +144,8 @@ func _ready() -> void:
 
 	## TASK-051: board_view.gd is already generic over `player` -- a second
 	## instance, sharing the same world/board geometry, renders player 1's
-	## snake on top of the same shared board/food/grid.
+	## snake on top of the same shared board/food/grid. Hidden entirely for
+	## a 1-player game (see _apply_player_count).
 	board_view_p2 = BoardView.new()
 	board_view_p2.custom_minimum_size = Vector2(520, 520)
 	board_view_p2.size = Vector2(520, 520)
@@ -135,6 +165,8 @@ func _ready() -> void:
 	add_child(overlay)
 	overlay.set_modes(_modes, _current_mode_id)
 	overlay.action_pressed.connect(_on_overlay_action_pressed)
+	overlay.player_count_selected.connect(_on_player_count_selected)
+	overlay.return_to_title_requested.connect(_on_return_to_title_requested)
 	overlay.mode_selected.connect(_on_mode_selected)
 	overlay.settings_requested.connect(_on_settings_requested)
 
@@ -169,6 +201,7 @@ func _ready() -> void:
 	add_child(music)
 	music.play()
 
+	_apply_player_count()
 	_refresh_screen()
 	_maybe_drive_capture_state()
 
@@ -182,6 +215,7 @@ func _maybe_drive_capture_state() -> void:
 	var state := _capture_state_arg()
 	if state == "" or state == "menu":
 		return
+	_randomize_start = false
 	set_process(false)
 	_on_direction_queued(SimulationWorld.DIR_UP)
 	if state == "playing":
@@ -223,7 +257,7 @@ func _process(delta: float) -> void:
 
 	TickDriver.advance_frame(world, delta * 1000.0, true, not _paused)
 
-	var drain := world.event_drain(16)
+	var drain := world.event_drain(EVENT_DRAIN_CAPACITY)
 	if drain.result == SimulationWorld.OK:
 		for event in drain.events:
 			var event_board_view: BoardView = board_view if event.player == 0 else board_view_p2
@@ -259,7 +293,7 @@ func _process(delta: float) -> void:
 ## died first, in which case player 1's status settles it.
 func _shared_status() -> int:
 	var v0: int = world.player_view_get(0).status
-	if v0 != BoardGeometry.STATUS_DEAD:
+	if _player_count < 2 or v0 != BoardGeometry.STATUS_DEAD:
 		return v0
 	return world.player_view_get(1).status
 
@@ -267,7 +301,6 @@ func _refresh_screen() -> void:
 	var view0 := world.player_view_get(0)
 	if view0.result != SimulationWorld.OK:
 		return
-	var view1 := world.player_view_get(1)
 	var screen := GameScreenState.screen_for(_shared_status(), _paused)
 	var best: int = _save_data.best_scores.get(_current_mode_id, 0)
 	if view0.score > best:
@@ -277,8 +310,10 @@ func _refresh_screen() -> void:
 		save_store.save(_save_data)
 
 	hud.update(view0.score, best, GameScreenState.screen_for(view0.status, _paused).capitalize())
-	if view1.result == SimulationWorld.OK:
-		hud.update_p2(view1.score, GameScreenState.screen_for(view1.status, _paused).capitalize())
+	if _player_count >= 2:
+		var view1 := world.player_view_get(1)
+		if view1.result == SimulationWorld.OK:
+			hud.update_p2(view1.score, GameScreenState.screen_for(view1.status, _paused).capitalize())
 
 	if _settings_open:
 		return
@@ -336,12 +371,17 @@ func _on_restart_requested() -> void:
 	if status == BoardGeometry.STATUS_MENU or status == BoardGeometry.STATUS_DEAD:
 		_start_or_restart()
 	else:
+		## reset() forces every player back to the sim's own fixed
+		## right-facing spawn, so this path needs the same reroll
+		## _start_or_restart() does -- without it, restarting mid-run always
+		## heads east.
 		world.reset()
+		_apply_start_directions()
 		_paused = false
 		_refresh_screen()
 
 ## The overlay's single action button: "Start" (menu), "Resume" (paused),
-## or "Play again" (dead) -- mirrors el.start's click handler, which
+## or "Play Again" (dead) -- mirrors el.start's click handler, which
 ## dispatches on status the same way (snake.html:588-590).
 func _on_overlay_action_pressed() -> void:
 	var view := world.player_view_get(0)
@@ -355,11 +395,89 @@ func _on_overlay_action_pressed() -> void:
 	else:
 		_start_or_restart()
 
+## The dead screen's "Return to Title". A fresh world.init() is what puts
+## the status back to menu -- world.reset() only restarts a run, and no ABI
+## call moves a live world backwards into .menu. Keeps the current player
+## count so the menu comes up on whatever was last played; picking a
+## different one there re-inits again anyway.
+func _on_return_to_title_requested() -> void:
+	sfx.play("ui_confirm")
+	world.init(COLS, ROWS, _player_count, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+	_paused = false
+	_is_win = false
+	_refresh_screen()
+
+## Queues each player's drawn heading against an already-playing world, so
+## every path that puts a snake back on the sim's fixed right-facing spawn
+## -- _start_or_restart()'s init/reset, and R's mid-run reset() -- rerolls
+## through here rather than each re-deriving it.
+##
+## queue_dir alone only sets next_dir; the heading wouldn't commit until the
+## first pumped tick, so the snake would render facing east for a frame and
+## then visibly pivot. Stepping the sim here, before anything is drawn,
+## makes the drawn heading the starting one. It takes SNAKE_LEN - 1 ticks to
+## walk every segment out of the east-west spawn layout and onto the new
+## axis -- one tick alone would leave an elbow behind the head.
+##
+## ns_step is the exact-one-tick primitive (include/neo_snake.h calls
+## queue_dir/pump the local-play conveniences layered on top of it), so this
+## consumes no accumulator time and can't overshoot.
+func _apply_start_directions() -> void:
+	if not _randomize_start:
+		return
+	var dirs := StartDirections.pick(_player_count)
+	var inputs := []
+	for player in dirs.size():
+		inputs.append({"player": player, "dir": dirs[player]})
+	for i in SNAKE_LEN - 1:
+		world.step(inputs)
+	## A pellet can land in the handful of cells stepped over here. Draining
+	## keeps _process from firing an eat cue and a particle burst for a bite
+	## the player never saw -- the score it earned still stands.
+	world.event_drain(EVENT_DRAIN_CAPACITY)
+
+## The menu's "1 Player Game" / "2 Player Game" buttons. The count is fixed
+## for the run: re-initializing mid-game would reset both snakes anyway, and
+## the buttons only exist on the menu screen.
+func _on_player_count_selected(count: int) -> void:
+	_player_count = count
+	_apply_player_count()
+	sfx.play("ui_confirm")
+	_start_or_restart()
+
+## Gates every surface that names player 1 on whether player 1 exists.
+func _apply_player_count() -> void:
+	board_view_p2.visible = _player_count >= 2
+	hud.set_p2_row_visible(_player_count >= 2)
+
 func _start_or_restart() -> void:
 	var view := world.player_view_get(0)
-	if view.result == SimulationWorld.OK and _shared_status() == BoardGeometry.STATUS_MENU:
-		world.init(COLS, ROWS, 2, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+	var status := _shared_status()
+	if view.result == SimulationWorld.OK and status == BoardGeometry.STATUS_MENU:
+		world.init(COLS, ROWS, _player_count, _wrap_for(_current_mode_id), SeedSource.fresh(), SimulationWorld.SPEED_SOURCE_SCORE_TABLE)
+	elif status == BoardGeometry.STATUS_DEAD:
+		## core/world.zig's queueDir (byte-for-byte matching the oracle's
+		## own queueDir, snake.html:569-576) checks a queued direction
+		## against next_dir whenever status isn't "playing" -- including
+		## "dead", where next_dir is just whatever a player was moving
+		## when they died. Queuing DIR_RIGHT below with no reset first
+		## means a player who died moving left gets silently rejected as
+		## an illegal 180 (the very check that's supposed to only guard
+		## a live run), so status never flips back to playing and every
+		## later restart attempt -- any key, or "Play Again" by mouse --
+		## fails the identical way. world.reset() unconditionally sets
+		## every player's next_dir back to .right first, so the
+		## queue_dir call below can never collide.
+		world.reset()
+	## This first queue_dir is what flips the world out of menu/dead: core's
+	## queueDir calls start() -> reset(), which re-forces every player's
+	## dir back to .right, clobbering whatever was queued (the oracle quirk
+	## documented on _on_direction_queued). So the randomized headings can
+	## only be applied afterwards, against an already-playing world -- where
+	## the 180 guard reads dir == .right and accepts every direction in
+	## StartDirections.LEGAL. They commit on the first tick.
 	world.queue_dir(0, SimulationWorld.DIR_RIGHT)
+	_apply_start_directions()
 	_paused = false
 	_is_win = false
 	sfx.play("start")
@@ -372,7 +490,25 @@ func _start_or_restart() -> void:
 ## unconditionally sets S.dir = S.nextDir = right (snake.html:312) AFTER
 ## queueDir() already set nextDir to the pressed key, clobbering it. So the
 ## keypress that starts a run never steers it; only the run itself.
+##
+## On desktop this branch is normally unreachable from the keyboard: while
+## the menu/dead overlay is showing, its action button holds real Control
+## focus (overlay_panel.gd), so a keyboard arrow gets consumed there first
+## (Godot's own ui_up/ui_down focus navigation) and never reaches
+## input_router.gd's _unhandled_input at all -- Enter/Space "choose the
+## selection" instead, per Lance's desktop-menu spec. This still matters
+## for touch swipe and joypad direction input, neither of which goes
+## through Control focus, so both keep the oracle's original
+## press-any-direction-to-start convenience -- starting whatever player
+## count the menu is currently sitting on.
+##
+## A direction for a player this world doesn't have (WASD in a 1-player
+## game) is dropped here rather than in input_router.gd: the router is a
+## pure translation layer with no game-state knowledge, and the player
+## count is game state.
 func _on_direction_queued(dir: int, player: int = 0) -> void:
+	if player >= _player_count:
+		return
 	var status := _shared_status()
 	if status == BoardGeometry.STATUS_MENU or status == BoardGeometry.STATUS_DEAD:
 		_start_or_restart()

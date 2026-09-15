@@ -11,6 +11,13 @@ extends RefCounted
 ## instead of showOverlay()'s innerHTML string-building, and a Label needs
 ## no markup to break a line or emphasize a number.
 
+## The keyboard split local 2-player uses (backlog/decisions/decision-035):
+## player 0 owns the arrow keys, player 1 owns WASD. Shown on the menu so a
+## second player doesn't have to be told which half of the keyboard is
+## theirs. Player 2's line stays up for a 1-player game too -- it is how a
+## player learns a 2-player game exists.
+const CONTROLS_LEGEND := "Player 1: Arrow Keys\nPlayer 2: WASD"
+
 const SCREEN_MENU := "menu"
 const SCREEN_PLAYING := "playing"
 const SCREEN_PAUSED := "paused"
@@ -39,9 +46,12 @@ static func overlay_content(screen: String, score: int, best: int, snake_len: in
 		SCREEN_MENU:
 			return {
 				"title": "Ready?",
-				"sub": "Eat the red squares. Don't hit the walls or yourself.\nArrows / WASD to move · Space to pause.",
-				"button_label": "Start",
+				"sub": "Eat the red squares. Don't hit the walls or yourself.\nSpace to pause.",
+				"button_label": "",
 				"show_mode_select": true,
+				"show_player_select": true,
+				"show_return_to_title": false,
+				"controls": CONTROLS_LEGEND,
 			}
 		SCREEN_PAUSED:
 			return {
@@ -49,20 +59,29 @@ static func overlay_content(screen: String, score: int, best: int, snake_len: in
 				"sub": "Score %d · Length %d\nSpace to resume." % [score, snake_len],
 				"button_label": "Resume",
 				"show_mode_select": false,
+				"show_player_select": false,
+				"show_return_to_title": false,
+				"controls": "",
 			}
 		SCREEN_DEAD:
 			if is_win:
 				return {
 					"title": "You Win",
 					"sub": "Perfect board — Score %d. Insane." % score,
-					"button_label": "Play again",
+					"button_label": "Play Again",
 					"show_mode_select": false,
+					"show_player_select": false,
+					"show_return_to_title": true,
+					"controls": "",
 				}
 			return {
 				"title": "Game Over",
-				"sub": "Score %d · Best %d\nPress R or the button to run it back." % [score, best],
-				"button_label": "Play again",
+				"sub": "Score %d · Best %d\nPress R to run it back." % [score, best],
+				"button_label": "Play Again",
 				"show_mode_select": false,
+				"show_player_select": false,
+				"show_return_to_title": true,
+				"controls": "",
 			}
 		_:
 			return {}

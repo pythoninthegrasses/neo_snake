@@ -609,6 +609,49 @@ reconfigured per screen via `configure()`, mirroring the oracle's single `#overl
 mode `<select>`-equivalent (`OptionButton`) is shown only for `SCREEN_MENU`, even though the
 oracle's own `<select>` is structurally visible for every overlay state.
 
+The menu screen is where the player count is chosen. `overlay_content(SCREEN_MENU, …)` sets
+`show_player_select` and a `controls` legend (`GameScreenState.CONTROLS_LEGEND` — "Player 1: Arrow
+Keys" / "Player 2: WASD", naming decision-035's keyboard split) and leaves `button_label` empty;
+`OverlayPanel` then shows its "1 Player Game" / "2 Player Game" buttons instead of the single action
+button and emits `player_count_selected(count)`. Every other screen is confirming one thing —
+Resume, Play Again — so it keeps the single action button and hides these. The dead screen adds one
+more (`show_return_to_title`): a "Return to Title" button below Play Again, which re-runs
+`world.init()` — the only way back to `.menu`, since `world.reset()` restarts a run and no ABI call
+moves a live world backwards. `GameScreen._player_count`
+feeds `world.init` and gates `board_view_p2`, the HUD's P2 row, and player-1 direction input, because
+`core/abi.zig` rejects any call naming a player the world doesn't have. The count is fixed for the
+run; it can only change back on the menu.
+
+**Start headings (`game/simulation/start_directions.gd`).** Core spawns every snake facing right,
+pinned byte-for-byte against `reference/oracle/sim.mjs` by the committed corpus, so randomizing the
+heading is a Godot-layer choice applied on top: `_start_or_restart()` queues `DIR_RIGHT` first —
+that call is what flips the world out of menu/dead, and core's `queueDir` runs `start()` → `reset()`
+which re-forces `.right`, clobbering anything queued alongside it — then queues the drawn headings
+against the now-playing world, where they survive and commit on the first tick.
+`StartDirections.LEGAL` omits `DIR_LEFT`: `reset()` lays the body out horizontally head-first at
+`(8, cy), (7, cy), (6, cy)`, so a left-facing snake would move onto its own neck, which is precisely
+what `queueDir`'s 180 guard rejects. A 1-player game draws uniformly from the other three; a
+2-player game additionally forbids player 0 heading down while player 1 heads up, the only pairing
+that points them at each other given decision-034's shared spawn column. Every path that puts a snake back on the fixed spawn rerolls through one
+`GameScreen._apply_start_directions()` — `_start_or_restart()`'s init/reset *and* R's mid-run
+`world.reset()`, which otherwise silently kept the sim's own right-facing spawn. That helper does
+not stop at `queue_dir`: queuing alone only sets `next_dir`, so the heading would not commit until
+the first pumped tick and the snake would render facing east for a frame before pivoting. It steps
+the sim `SNAKE_LEN - 1` times right there, before anything is drawn, which both commits the heading
+and walks every segment off the east-west spawn layout, so the first frame shows a straight snake
+already pointing the right way. `ns_step` is used rather than `pump` because it advances exactly one
+tick and consumes no accumulator time. Events from those steps are drained and discarded: a pellet
+can sit in the stepped-over cells, and firing an eat cue for a bite the player never saw would be
+worse than the quiet point it scores. One consequence worth knowing: a run begins on a randomized
+heading, so the player's first input is constrained relative to it by the usual 180 guard.
+`StartDirections` draws from its own seeded `RandomNumberGenerator`, not the engine's global RNG, so
+a test can pin the sequence; it is independent of the simulation's seeded stream (`core/rng.zig`,
+`docs/rng.md`), which stays reserved for food placement and is pinned by the corpus. It lives in
+`game/simulation/` because seeding an RNG at all is something
+`tools/validate_simulation_boundary.py` allows nowhere else (same reason as `seed_source.gd`).
+`GameScreen._randomize_start` turns it off for the TASK-037 parity capture harness alone, whose
+screenshots are compared against the oracle's own right-facing spawn.
+
 `game_screen.gd` (`GameScreen extends Control`) is the top-level orchestrator: it loads content via
 `ContentLoader`, save data via `SaveStore`, generates a fresh RNG seed via `seed_source.gd`'s
 `SeedSource.fresh()` (the only `randi()` caller outside `game/simulation/`'s own boundary-gate
