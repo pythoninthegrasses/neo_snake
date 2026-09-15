@@ -16,21 +16,28 @@ var _status_label := Label.new()
 ## persistence stays player-0/mode-scoped only (see backlog/decisions).
 var _p2_score_label := Label.new()
 var _p2_status_label := Label.new()
+var _p2_box: HBoxContainer
 
 func _ready() -> void:
+	## Both rows are plain Control children with no shared layout container,
+	## so without this VBoxContainer wrapper they both default to (0, 0)
+	## and render on top of each other.
+	var rows := VBoxContainer.new()
+	add_child(rows)
+
 	var box := HBoxContainer.new()
 	box.add_theme_constant_override("separation", 16)
-	add_child(box)
+	rows.add_child(box)
 	box.add_child(_score_label)
 	box.add_child(_best_label)
 	box.add_child(_status_label)
 	update(0, 0, "")
 
-	var p2_box := HBoxContainer.new()
-	p2_box.add_theme_constant_override("separation", 16)
-	add_child(p2_box)
-	p2_box.add_child(_p2_score_label)
-	p2_box.add_child(_p2_status_label)
+	_p2_box = HBoxContainer.new()
+	_p2_box.add_theme_constant_override("separation", 16)
+	rows.add_child(_p2_box)
+	_p2_box.add_child(_p2_score_label)
+	_p2_box.add_child(_p2_status_label)
 	update_p2(0, "")
 
 ## status_text mirrors the S.status equivalent transition currently in
