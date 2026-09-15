@@ -17,6 +17,20 @@ tasks:
     cmds:
       - ./tools/run.py godot {{.CLI_ARGS}}
 
+  run:
+    desc: "Play the game in a window"
+    summary: |
+      task game:run
+
+      Extra Godot args pass straight through, e.g.
+
+        task game:run -- -d
+
+      for the debug output (print()/push_error()) on stdout.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./tools/run.py godot --path game {{.CLI_ARGS}}
+
   import:
     desc: "Headless Godot import of the game/ project"
     dir: "{{.ROOT_DIR}}"
