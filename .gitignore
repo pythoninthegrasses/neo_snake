@@ -300,10 +300,11 @@ zig-out/
 *.os
 .sconsign.dblite
 
+# Dumped into the project by the Godot editor when it opens a GDExtension
+# project; the build uses third_party/godot-cpp's own copy.
+game/gdextension_interface.h
+
 # INCLUDE
 !**/*.example
 !**/.gitkeep
 
-# Dumped into the project by the Godot editor when it opens a GDExtension
-# project; the build uses third_party/godot-cpp's own copy.
-game/gdextension_interface.h
