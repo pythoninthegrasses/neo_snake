@@ -134,6 +134,16 @@ func test_game_screen_wires_a_second_board_view_for_player_1() -> void:
 	assert_int(_screen.board_view_p2.player).is_equal(1)
 
 
+## TASK-055: board_view_p2 is stacked on top of board_view, so if it also
+## painted the shared board layers (opaque background/checkerboard/grid, and
+## food) it would erase player 0's snake every frame -- player 0 then looks
+## unsteerable because it is simply invisible.
+
+func test_only_the_bottom_board_view_paints_the_shared_board() -> void:
+	assert_bool(_screen.board_view.draws_shared_board).is_true()
+	assert_bool(_screen.board_view_p2.draws_shared_board).is_false()
+
+
 func test_player_1_direction_input_steers_player_1_without_touching_player_0() -> void:
 	_screen._start_or_restart()
 	_screen._on_direction_queued(SimulationWorld.DIR_DOWN, 1)

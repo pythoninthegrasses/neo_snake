@@ -103,6 +103,7 @@ func _ready() -> void:
 	board_view_p2.size = Vector2(520, 520)
 	board_view_p2.position = Vector2(0, 0)
 	board_view_p2.setup(world, _tuning, _palette, 1)
+	board_view_p2.draws_shared_board = false
 	add_child(board_view_p2)
 	_apply_settings(_save_data.settings)
 

@@ -448,6 +448,14 @@ vignette. `BoardGeometry.DRAW_LAYER_ORDER` names that same sequence as data, and
 `game/tests/test_board_geometry.gd` pins it directly, so the ordering invariant is an enforced check
 rather than something only code review protects.
 
+Four of those layers — background, checkerboard, grid, food — describe the shared board, not a
+player, and the first three are opaque. `BoardView.draws_shared_board` (default `true`) gates them
+so that when two `BoardView`s are stacked for local 2-player (TASK-051's `board_view_p2`), only the
+bottom-most one paints them; the upper view would otherwise repaint an opaque board over the lower
+player's snake every frame and make that player invisible (TASK-055). Snake, eyes, particles, flash
+and pause vignette stay per-view — each is per-player state or translucent. `DRAW_LAYER_ORDER` is
+unchanged: the bottom view still draws the full sequence.
+
 All geometry/color math (segment weight/pad/color, food pulse/pad, corner radius, eye offsets/radius,
 grid line offsets, the checkerboard `Image` bake, and `docs/canonical-state.md`'s 44-byte canonical
 header decode) lives in `BoardGeometry`, a pure static `RefCounted` with no `Node`/viewport

@@ -18,6 +18,13 @@ existing menu's mode selector (`game/content/modes.json`) to also pick a player 
 cross-validating against `tuning.json`'s `scoring.best_score_defaults` (`game/content/loader.gd`'s
 `MODES_SCHEMA`) for no benefit this task's AC actually asks for -- YAGNI.
 
+> **Superseded 2026-09-15.** The menu now offers "1 Player Game" / "2 Player Game" as two buttons
+> and `GameScreen._player_count` drives `world.init`. The YAGNI call above held until a player
+> count was actually wanted; the cross-validation it worried about never arose, because the choice
+> lives in the overlay's own buttons rather than in `modes.json`'s mode list. `board_view_p2`, the
+> HUD's P2 row and player 1's WASD input are all gated on the count, since `core/abi.zig` rejects
+> any call naming a player the world doesn't have.
+
 **Keyboard scheme split: player 0 keeps arrow keys only, player 1 gets WASD only**
 (`game/platform/input_defaults.gd`'s new `ACTION_P2_MOVE_*` actions, `game/project.godot`'s
 `p2_move_*` bindings). Player 0's `move_up`/`move_down`/`move_left`/`move_right` action *names* are
@@ -57,6 +64,13 @@ bests is out of this task's scope.
 rendering is a second `BoardView` instance (`board_view_p2`) at the same position/size, sharing the
 same `SimulationWorld`, independently redrawing player 1's snake on top of the (harmlessly
 redundantly redrawn) shared board/food/grid.
+
+> **Corrected by TASK-055.** That redundant redraw was not harmless: `_draw_background()`,
+> `_draw_checkerboard()` and `_draw_grid()` are opaque, so `board_view_p2` -- added after
+> `board_view`, therefore painted on top -- erased player 0's snake every frame. Player 0 was
+> steerable the whole time, just invisible, which presented as "the arrow keys do nothing".
+> `BoardView` now carries `draws_shared_board` (default `true`, set `false` on `board_view_p2`)
+> gating background/checkerboard/grid/food; the remaining layers stay per-view.
 
 **Per-player death/eat fx cues route via the event dict's existing `"player"` field**
 (`core/abi.zig`'s `pushEvent` already tags every event with its player index) -- `GameScreen._process`

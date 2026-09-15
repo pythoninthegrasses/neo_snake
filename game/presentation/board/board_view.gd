@@ -19,6 +19,15 @@ var tuning: Dictionary
 var palette: Dictionary
 var fx := FxState.new()
 
+## False on a BoardView stacked on top of another one (TASK-051's player-1
+## instance, TASK-055): "background", "checkerboard", "grid" and "food" are
+## properties of the shared board, not of a player, and the first three are
+## opaque -- a second view repainting them erases the snake underneath.
+## Only the bottom-most view paints them; every other layer
+## (snake/eyes/particles/flash/pause_vignette) is per-player or translucent
+## and stays per-view.
+var draws_shared_board := true
+
 var _checkerboard_texture: ImageTexture
 var _baked_cols := -1
 var _baked_rows := -1
@@ -59,10 +68,11 @@ func _draw() -> void:
 	var view := world.player_view_get(player)
 	var body := world.body_copy(player)
 
-	_draw_background(cols, rows, cell)
-	_draw_checkerboard(cols, rows, cell)
-	_draw_grid(cols, rows, cell)
-	_draw_food(header, cell)
+	if draws_shared_board:
+		_draw_background(cols, rows, cell)
+		_draw_checkerboard(cols, rows, cell)
+		_draw_grid(cols, rows, cell)
+		_draw_food(header, cell)
 	if body.result == SimulationWorld.OK:
 		_draw_snake(body.cells, cell)
 		if view.result == SimulationWorld.OK:
