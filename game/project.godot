@@ -19,6 +19,8 @@ run/main_scene="res://main.tscn"
 
 window/size/viewport_width=520
 window/size/viewport_height=600
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
 
 [input]
 
