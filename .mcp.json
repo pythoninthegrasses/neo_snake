@@ -14,6 +14,13 @@
         "@upstash/context7-mcp"
       ]
     },
+    "godot": {
+      "command": "npx",
+      "args": ["@coding-solo/godot-mcp"],
+      "env": {
+        "DEBUG": "true"
+      }
+    },
     "serena": {
       "command": "uvx",
       "args": [
