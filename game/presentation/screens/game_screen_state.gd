@@ -51,6 +51,7 @@ static func overlay_content(screen: String, score: int, best: int, snake_len: in
 				"show_mode_select": true,
 				"show_player_select": true,
 				"show_return_to_title": false,
+				"show_quit": true,
 				"controls": CONTROLS_LEGEND,
 			}
 		SCREEN_PAUSED:
@@ -61,6 +62,7 @@ static func overlay_content(screen: String, score: int, best: int, snake_len: in
 				"show_mode_select": false,
 				"show_player_select": false,
 				"show_return_to_title": false,
+				"show_quit": false,
 				"controls": "",
 			}
 		SCREEN_DEAD:
@@ -72,6 +74,7 @@ static func overlay_content(screen: String, score: int, best: int, snake_len: in
 					"show_mode_select": false,
 					"show_player_select": false,
 					"show_return_to_title": true,
+					"show_quit": false,
 					"controls": "",
 				}
 			return {
@@ -81,6 +84,7 @@ static func overlay_content(screen: String, score: int, best: int, snake_len: in
 				"show_mode_select": false,
 				"show_player_select": false,
 				"show_return_to_title": true,
+				"show_quit": false,
 				"controls": "",
 			}
 		_:

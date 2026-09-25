@@ -9,7 +9,7 @@ extends RefCounted
 ## operationalized as data so board_view.gd's _draw() order can be pinned by
 ## a test instead of relying on code review alone (AC#4).
 const DRAW_LAYER_ORDER := [
-	"background", "checkerboard", "grid", "food", "snake", "eyes",
+	"background", "checkerboard", "grid", "walls", "food", "snake", "eyes",
 	"particles", "flash", "pause_vignette",
 ]
 
@@ -96,7 +96,7 @@ static func build_checkerboard_image(cols: int, rows: int, tile_color: Color, al
 
 ## Decodes the fields of docs/canonical-state.md's 44-byte header that
 ## board_view.gd needs and has no other accessor for (cols/rows/food
-## position aren't exposed by SimulationWorld.player_view_get or
+## position/wrap flag aren't exposed by SimulationWorld.player_view_get or
 ## .body_copy). PackedByteArray.decode_u16 is little-endian, matching the
 ## canonical format's own endianness.
 static func decode_canon_header(bytes: PackedByteArray) -> Dictionary:
@@ -105,4 +105,32 @@ static func decode_canon_header(bytes: PackedByteArray) -> Dictionary:
 		"rows": bytes.decode_u16(12),
 		"food_x": bytes.decode_u16(40),
 		"food_y": bytes.decode_u16(42),
+		"wrap": (bytes.decode_u16(14) & 1) != 0,
 	}
+
+## draw_rect()'s unfilled outline is centered on its own boundary, so a
+## `thickness`-px border around the board must be inset by half its own
+## width on every side to stay inside the 0..cols*cell / 0..rows*cell rect
+## that core/world.zig:340's bounds check actually kills you on.
+static func wall_border_rect(cols: int, rows: int, cell: float, thickness: float) -> Rect2:
+	var half := thickness / 2.0
+	return Rect2(half, half, cols * cell - thickness, rows * cell - thickness)
+
+## One dash per perimeter cell (`wrap` mode's edge is passable, so the
+## border reads as a broken line rather than solid), each centered on that
+## cell along the same half-thickness-inset boundary wall_border_rect()
+## draws solid. Returns an Array of [from: Vector2, to: Vector2] pairs.
+static func wall_dash_segments(cols: int, rows: int, cell: float, thickness: float, dash_fraction: float) -> Array:
+	var half := thickness / 2.0
+	var dash := cell * dash_fraction
+	var pad := (cell - dash) / 2.0
+	var out := []
+	for x in cols:
+		var cx := x * cell + pad
+		out.append([Vector2(cx, half), Vector2(cx + dash, half)])
+		out.append([Vector2(cx, rows * cell - half), Vector2(cx + dash, rows * cell - half)])
+	for y in rows:
+		var cy := y * cell + pad
+		out.append([Vector2(half, cy), Vector2(half, cy + dash)])
+		out.append([Vector2(cols * cell - half, cy), Vector2(cols * cell - half, cy + dash)])
+	return out
