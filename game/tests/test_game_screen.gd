@@ -120,6 +120,20 @@ func test_hud_reflects_score_and_status_after_start() -> void:
 	assert_str(_screen.hud._status_label.text).is_equal(GameScreenState.SCREEN_PLAYING.capitalize())
 
 
+## project.godot's viewport_height is 545 with a 520x520 board, leaving a
+## 25px strip for the HUD -- it must fit inside that, not spill below it.
+func test_hud_fits_inside_the_25px_strip_below_the_board() -> void:
+	assert_float(_screen.hud.custom_minimum_size.y).is_less_equal(25.0)
+	assert_float(_screen.hud.position.y + _screen.hud.custom_minimum_size.y).is_less_equal(545.0)
+
+
+## Quit (added for the title screen) reuses _quit_game() -- the same
+## music.stop()-then-quit path _notification() already runs on window
+## close -- rather than calling get_tree().quit() from a second place.
+func test_overlay_quit_requested_is_wired_to_quit_game() -> void:
+	assert_bool(_screen.overlay.quit_requested.is_connected(_screen._quit_game)).is_true()
+
+
 func test_start_or_restart_plays_the_start_cue() -> void:
 	_screen._start_or_restart()
 	assert_bool(_screen.sfx._players["start"].playing).is_true()

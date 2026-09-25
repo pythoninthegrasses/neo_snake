@@ -34,7 +34,11 @@
     "checkerboard_alpha": 0.019,
     "grid_line_alpha": 0.055,
     "device_pixel_ratio_cap": 2,
-    "pause_vignette_alpha": 0.55
+    "pause_vignette_alpha": 0.55,
+    "wall_border_width_px": 2.5,
+    "wall_border_alpha": 0.3,
+    "wall_border_wrap_alpha": 0.1,
+    "wall_border_wrap_dash_fraction": 0.55
   },
   "input": {
     "swipe_threshold_cell_fraction": 0.5

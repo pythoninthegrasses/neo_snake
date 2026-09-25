@@ -83,3 +83,16 @@ func test_overlay_content_menu_and_paused_have_no_return_to_title() -> void:
 	for screen in [GameScreenState.SCREEN_MENU, GameScreenState.SCREEN_PAUSED]:
 		var content := GameScreenState.overlay_content(screen, 0, 0, 3, false)
 		assert_bool(content.show_return_to_title).is_false()
+
+
+## Only the menu offers Quit -- every other screen already has a way out
+## (Resume, Play Again, Return to Title).
+func test_overlay_content_menu_offers_quit() -> void:
+	var content := GameScreenState.overlay_content(GameScreenState.SCREEN_MENU, 0, 0, 3, false)
+	assert_bool(content.show_quit).is_true()
+
+
+func test_overlay_content_paused_and_dead_have_no_quit() -> void:
+	for screen in [GameScreenState.SCREEN_PAUSED, GameScreenState.SCREEN_DEAD]:
+		var content := GameScreenState.overlay_content(screen, 0, 0, 3, false)
+		assert_bool(content.show_quit).is_false()

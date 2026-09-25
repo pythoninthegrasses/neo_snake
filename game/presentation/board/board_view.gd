@@ -72,6 +72,7 @@ func _draw() -> void:
 		_draw_background(cols, rows, cell)
 		_draw_checkerboard(cols, rows, cell)
 		_draw_grid(cols, rows, cell)
+		_draw_walls(header, cols, rows, cell)
 		_draw_food(header, cell)
 	if body.result == SimulationWorld.OK:
 		_draw_snake(body.cells, cell)
@@ -102,6 +103,21 @@ func _draw_grid(cols: int, rows: int, cell: float) -> void:
 		draw_line(Vector2(x, 0), Vector2(x, rows * cell), color, 1.0)
 	for y in BoardGeometry.grid_line_offsets(rows, cell):
 		draw_line(Vector2(0, y), Vector2(cols * cell, y), color, 1.0)
+
+## Solid in wall mode (the edge kills you); dim and dashed in wrap mode
+## (the edge is passable) -- reference/snake.html has no equivalent, this
+## is the port's own answer to grid_line_offsets() drawing interior lines
+## only (board_geometry.gd:78-82) and leaving the actual kill line invisible.
+func _draw_walls(header: Dictionary, cols: int, rows: int, cell: float) -> void:
+	var width: float = tuning.render.wall_border_width_px
+	var color := Color(palette.board.wall_border)
+	if header.wrap:
+		color.a = tuning.render.wall_border_wrap_alpha
+		for segment in BoardGeometry.wall_dash_segments(cols, rows, cell, width, tuning.render.wall_border_wrap_dash_fraction):
+			draw_line(segment[0], segment[1], color, width)
+	else:
+		color.a = tuning.render.wall_border_alpha
+		draw_rect(BoardGeometry.wall_border_rect(cols, rows, cell, width), color, false, width)
 
 func _draw_food(header: Dictionary, cell: float) -> void:
 	if header.food_x == BoardGeometry.NO_CELL_COORD:

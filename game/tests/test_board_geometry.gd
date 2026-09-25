@@ -107,10 +107,52 @@ func test_decode_canon_header_passes_through_no_cell_coord_unchanged() -> void:
 	assert_int(header.food_y).is_equal(BoardGeometry.NO_CELL_COORD)
 
 
+## docs/canonical-state.md:23 -- flags bit 0 is S.wrap.
+func test_decode_canon_header_reads_wrap_flag_bit() -> void:
+	var wrapped := PackedByteArray()
+	wrapped.resize(44)
+	wrapped.encode_u16(14, 1)
+	assert_bool(BoardGeometry.decode_canon_header(wrapped).wrap).is_true()
+
+	var walled := PackedByteArray()
+	walled.resize(44)
+	walled.encode_u16(14, 0)
+	assert_bool(BoardGeometry.decode_canon_header(walled).wrap).is_false()
+
+
 ## Operationalizes AC#4 (statement order matches snake.html's back-to-front
 ## layering) as a pinned data check rather than leaving it to code review.
 func test_draw_layer_order_matches_snake_htmls_back_to_front_layering() -> void:
 	assert_array(BoardGeometry.DRAW_LAYER_ORDER).is_equal([
-		"background", "checkerboard", "grid", "food", "snake", "eyes",
+		"background", "checkerboard", "grid", "walls", "food", "snake", "eyes",
 		"particles", "flash", "pause_vignette",
 	])
+
+
+## draw_rect's unfilled outline is centered on the boundary, so a
+## `thickness`-px border is inset by half its own width on every side.
+func test_wall_border_rect_is_inset_by_half_the_border_thickness() -> void:
+	var rect := BoardGeometry.wall_border_rect(24, 24, 20.0, 2.5)
+	assert_vector(rect.position).is_equal_approx(Vector2(1.25, 1.25), Vector2(0.0001, 0.0001))
+	assert_vector(rect.size).is_equal_approx(Vector2(477.5, 477.5), Vector2(0.0001, 0.0001))
+
+
+## One dash per perimeter cell: cols across the top + cols across the
+## bottom + rows down the left + rows down the right.
+func test_wall_dash_segments_has_one_dash_per_perimeter_cell() -> void:
+	var segments := BoardGeometry.wall_dash_segments(4, 3, 10.0, 2.0, 0.5)
+	assert_int(segments.size()).is_equal(2 * (4 + 3))
+
+
+## First dash is the top-left corner cell's own top edge, centered on that
+## cell and inset by half the border thickness -- same boundary line as
+## wall_border_rect's solid path.
+func test_wall_dash_segments_first_dash_sits_on_the_inset_top_edge() -> void:
+	var segments: Array = BoardGeometry.wall_dash_segments(4, 3, 10.0, 2.0, 0.5)
+	var first: Array = segments[0]
+	var from: Vector2 = first[0]
+	var to: Vector2 = first[1]
+	assert_float(from.y).is_equal_approx(1.0, 0.0001)
+	assert_float(to.y).is_equal_approx(1.0, 0.0001)
+	assert_float(from.x).is_equal_approx(2.5, 0.0001)
+	assert_float(to.x).is_equal_approx(7.5, 0.0001)

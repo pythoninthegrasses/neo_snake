@@ -7,38 +7,43 @@ extends Control
 ## (snake.html:218-223), which this task's text never asks for. Built in
 ## code, matching board_view.gd's code-first Control convention: this repo
 ## has no .tscn precedent to follow instead.
+##
+## Both players' fields share a single HBoxContainer row (game_screen.gd
+## sets custom_minimum_size.y to the 25px strip below the board, which only
+## fits one text row) rather than the two stacked rows an earlier version
+## used.
 
 var _score_label := Label.new()
 var _best_label := Label.new()
 var _status_label := Label.new()
 
-## TASK-051: player 1's own row. No best-score label -- best-score
+## TASK-051: player 1's own fields. No best-score label -- best-score
 ## persistence stays player-0/mode-scoped only (see backlog/decisions).
 var _p2_score_label := Label.new()
 var _p2_status_label := Label.new()
 var _p2_box: HBoxContainer
 
-func _ready() -> void:
-	## Both rows are plain Control children with no shared layout container,
-	## so without this VBoxContainer wrapper they both default to (0, 0)
-	## and render on top of each other.
-	var rows := VBoxContainer.new()
-	add_child(rows)
+const _FONT_SIZE := 14
 
-	var box := HBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
-	rows.add_child(box)
-	box.add_child(_score_label)
-	box.add_child(_best_label)
-	box.add_child(_status_label)
+func _ready() -> void:
+	custom_minimum_size = Vector2(0, 25)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	add_child(row)
+	row.add_child(_score_label)
+	row.add_child(_best_label)
+	row.add_child(_status_label)
 	update(0, 0, "")
 
 	_p2_box = HBoxContainer.new()
 	_p2_box.add_theme_constant_override("separation", 16)
-	rows.add_child(_p2_box)
+	row.add_child(_p2_box)
 	_p2_box.add_child(_p2_score_label)
 	_p2_box.add_child(_p2_status_label)
 	update_p2(0, "")
+
+	for label in [_score_label, _best_label, _status_label, _p2_score_label, _p2_status_label]:
+		label.add_theme_font_size_override("font_size", _FONT_SIZE)
 
 ## status_text mirrors the S.status equivalent transition currently in
 ## effect (menu/playing/paused/dead) -- not part of the oracle's own HUD,

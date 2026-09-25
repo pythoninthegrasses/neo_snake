@@ -21,6 +21,7 @@ signal player_count_selected(count: int)
 signal return_to_title_requested
 signal mode_selected(mode_id: String)
 signal settings_requested
+signal quit_requested
 
 var _title_label := Label.new()
 var _sub_label := Label.new()
@@ -42,6 +43,14 @@ var _action_button := Button.new()
 var _return_button := Button.new()
 
 var _settings_button := Button.new()
+
+## Menu-only, same as the mode select/player-count buttons. Hidden outright
+## on a platform where quitting is impossible (a browser tab -- see
+## game_screen.gd's OS.has_feature("web") check) via set_quit_available(),
+## not just left visible and inert.
+var _quit_button := Button.new()
+var _quit_available := true
+
 var _mode_ids: Array[String] = []
 
 ## Tracks the visible->hidden/hidden->visible edge across configure() calls
@@ -73,12 +82,15 @@ func _ready() -> void:
 	box.add_child(_return_button)
 	_settings_button.text = "Settings"
 	box.add_child(_settings_button)
+	_quit_button.text = "Quit"
+	box.add_child(_quit_button)
 	_action_button.pressed.connect(func() -> void: action_pressed.emit())
 	_return_button.pressed.connect(func() -> void: return_to_title_requested.emit())
 	_one_player_button.pressed.connect(func() -> void: player_count_selected.emit(1))
 	_two_player_button.pressed.connect(func() -> void: player_count_selected.emit(2))
 	_mode_select.item_selected.connect(_on_item_selected)
 	_settings_button.pressed.connect(func() -> void: settings_requested.emit())
+	_quit_button.pressed.connect(func() -> void: quit_requested.emit())
 
 func _on_item_selected(index: int) -> void:
 	mode_selected.emit(_mode_ids[index])
@@ -118,3 +130,10 @@ func configure(content: Dictionary) -> void:
 	_controls_label.text = content.controls
 	_controls_label.visible = content.controls != ""
 	_mode_select.visible = content.show_mode_select
+	_quit_button.visible = content.show_quit and _quit_available
+
+## game_screen.gd calls this once, before the first configure(), with
+## `not OS.has_feature("web")` -- a browser tab can't quit itself, so
+## get_tree().quit() would be a visible no-op there.
+func set_quit_available(available: bool) -> void:
+	_quit_available = available

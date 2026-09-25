@@ -88,7 +88,7 @@ var _save_data: Dictionary
 var _settings_open := false
 
 func _ready() -> void:
-	## project.godot's viewport_width/height (520x600) is only the design
+	## project.godot's viewport_width/height (520x545) is only the design
 	## canvas that canvas_items/keep stretch scales up to fill the window --
 	## it's also the actual initial OS window size unless overridden here,
 	## since window_width_override/height_override (the project-settings
@@ -99,12 +99,12 @@ func _ready() -> void:
 	## QHD/4K display doesn't blow the board up past a sane on-screen size.
 	## Window.size is in physical pixels, not the OS window manager's points
 	## -- on a Retina/hiDPI display (screen_get_scale() > 1) an unscaled
-	## Vector2i(780, 900) here nets a window that visually measures half
+	## Vector2i(780, 817.5) here nets a window that visually measures half
 	## that on screen, so the target size must be scaled up to compensate.
 	var screen := DisplayServer.window_get_current_screen()
 	var display_scale := DisplayServer.screen_get_scale(screen)
-	get_window().size = Vector2i(Vector2(780, 900) * display_scale)
-	get_window().max_size = Vector2i(Vector2(936, 1080) * display_scale)
+	get_window().size = Vector2i(Vector2(780, 817.5) * display_scale)
+	get_window().max_size = Vector2i(Vector2(936, 981) * display_scale)
 
 	var content := ContentLoader.load_all()
 	if not content.ok:
@@ -169,6 +169,8 @@ func _ready() -> void:
 	overlay.return_to_title_requested.connect(_on_return_to_title_requested)
 	overlay.mode_selected.connect(_on_mode_selected)
 	overlay.settings_requested.connect(_on_settings_requested)
+	overlay.set_quit_available(not OS.has_feature("web"))
+	overlay.quit_requested.connect(_quit_game)
 
 	settings_panel = SettingsPanel.new()
 	settings_panel.position = board_view.position
@@ -235,16 +237,21 @@ func _capture_state_arg() -> String:
 			return arg.substr("--capture-state=".length())
 	return ""
 
+## NOTIFICATION_WM_CLOSE_REQUEST fires for both a window close and a
+## terminal SIGINT, so routing it through _quit_game() covers both.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_quit_game()
+
 ## A still-looping AudioStreamOggVorbis at process exit leaks its playback
 ## objects (AudioStreamPlaybackOggVorbis/OggPacketSequencePlayback) --
 ## Godot only releases them cleanly once AudioStreamPlayer.stop() has run,
-## not merely on the node being freed. NOTIFICATION_WM_CLOSE_REQUEST fires
-## for both a window close and a terminal SIGINT, so this covers both.
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		if music != null:
-			music.stop()
-		get_tree().quit()
+## not merely on the node being freed. Shared by the window-close path
+## above and the title screen's own Quit button.
+func _quit_game() -> void:
+	if music != null:
+		music.stop()
+	get_tree().quit()
 
 func _process(delta: float) -> void:
 	var pre_food_x := BoardGeometry.NO_CELL_COORD

@@ -55,6 +55,10 @@ const TUNING_SCHEMA := {
 		"grid_line_alpha": "number",
 		"device_pixel_ratio_cap": "number",
 		"pause_vignette_alpha": "number",
+		"wall_border_width_px": "number",
+		"wall_border_alpha": "number",
+		"wall_border_wrap_alpha": "number",
+		"wall_border_wrap_dash_fraction": "number",
 	},
 	"input": {
 		"swipe_threshold_cell_fraction": "number",
@@ -82,6 +86,7 @@ const PALETTE_SCHEMA := {
 		"background": TYPE_STRING,
 		"checkerboard_tile": TYPE_STRING,
 		"grid_line": TYPE_STRING,
+		"wall_border": TYPE_STRING,
 		"food_fill": TYPE_STRING,
 		"food_shadow": TYPE_STRING,
 		"snake_head_fill": TYPE_STRING,
